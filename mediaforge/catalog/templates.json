@@ -1,0 +1,127 @@
+{
+  "_readme": [
+    "Editable project templates, in the spirit of CapCut / Google Vids starters.",
+    "A template describes the shape of a video: canvas, per-slot durations, transitions,",
+    "text overlays and an optional Director brief that pre-fills the agent.",
+    "",
+    "Apply one from the Templates tab: it sets the render settings, fills slots from your",
+    "selected library assets (or leaves them empty as placeholders), and queues the render."
+  ],
+
+  "templates": [
+    {
+      "id": "reel-hook-3",
+      "name": "Vertical Reel — 3-beat hook",
+      "category": "Social",
+      "description": "Hook, payoff, call to action. The default shape for TikTok/Reels/Shorts.",
+      "canvas": {"width": 1080, "height": 1920, "fps": 30},
+      "crossfade": 0.25,
+      "slots": [
+        {"label": "Hook — the surprising first frame", "seconds": 3.0,
+         "text": "Wait for it...", "text_position": "top"},
+        {"label": "Payoff — the thing itself", "seconds": 8.0, "text": ""},
+        {"label": "Call to action", "seconds": 3.0,
+         "text": "Follow for more", "text_position": "center"}
+      ],
+      "director_brief": "A 14-second vertical short. Open on a surprising visual hook in the first second, deliver the payoff in the middle, end on a clear call to action. Fast cuts, high contrast, no dialogue."
+    },
+    {
+      "id": "product-hero",
+      "name": "Product hero — 5 shots",
+      "category": "Commerce",
+      "description": "Wide establishing, detail macro, in-use, benefit, logo card.",
+      "canvas": {"width": 1920, "height": 1080, "fps": 30},
+      "crossfade": 0.5,
+      "slots": [
+        {"label": "Establishing wide", "seconds": 3.0, "text": ""},
+        {"label": "Macro detail", "seconds": 3.0, "text": ""},
+        {"label": "Product in use", "seconds": 4.0, "text": ""},
+        {"label": "Benefit shot", "seconds": 3.0, "text": ""},
+        {"label": "Logo / end card", "seconds": 3.0, "text": "Your brand here",
+         "text_position": "center"}
+      ],
+      "director_brief": "A 16-second product film. Premium, calm, natural light, shallow depth of field. Establishing wide, macro detail of the material, the product in use by human hands, a benefit moment, then a clean end card on a plain background."
+    },
+    {
+      "id": "photo-slideshow",
+      "name": "Photo slideshow — Ken Burns",
+      "category": "Personal",
+      "description": "Stills become video with a slow push and crossfades. Add a music bed.",
+      "canvas": {"width": 1920, "height": 1080, "fps": 30},
+      "crossfade": 0.7,
+      "slot_repeat": true,
+      "slots": [
+        {"label": "Photo", "seconds": 3.5, "text": ""}
+      ]
+    },
+    {
+      "id": "talking-head",
+      "name": "Talking head + b-roll",
+      "category": "Content",
+      "description": "Speaker with cutaways. Pair with auto jump-cut and burned subtitles.",
+      "canvas": {"width": 1920, "height": 1080, "fps": 30},
+      "crossfade": 0.2,
+      "slots": [
+        {"label": "Speaker — intro", "seconds": 6.0, "text": ""},
+        {"label": "B-roll cutaway", "seconds": 4.0, "text": ""},
+        {"label": "Speaker — main point", "seconds": 8.0, "text": ""},
+        {"label": "B-roll cutaway", "seconds": 4.0, "text": ""},
+        {"label": "Speaker — close", "seconds": 5.0, "text": ""}
+      ],
+      "recommended_steps": [
+        "Edit -> Auto jump-cut on the speaker clips",
+        "Enhance -> Transcribe with Whisper",
+        "Edit -> Burn subtitles",
+        "Edit -> Clean speech",
+        "Edit -> Normalise loudness"
+      ]
+    },
+    {
+      "id": "before-after",
+      "name": "Before / after split",
+      "category": "Demo",
+      "description": "Two clips side by side. Good for restoration and upscale demos.",
+      "canvas": {"width": 1920, "height": 1080, "fps": 30},
+      "crossfade": 0.0,
+      "slots": [
+        {"label": "Before", "seconds": 5.0, "text": "Before", "text_position": "top-left"},
+        {"label": "After", "seconds": 5.0, "text": "After", "text_position": "top-left"}
+      ],
+      "recommended_steps": ["Edit -> Split screen with the two clips"]
+    },
+    {
+      "id": "cinematic-trailer",
+      "name": "Cinematic trailer — 6 beats",
+      "category": "Film",
+      "description": "Slow build to a title card. Wide aspect, long crossfades.",
+      "canvas": {"width": 1920, "height": 1080, "fps": 24},
+      "crossfade": 1.0,
+      "slots": [
+        {"label": "Black-to-image opening", "seconds": 4.0, "text": ""},
+        {"label": "World establishing", "seconds": 4.0, "text": ""},
+        {"label": "Character beat", "seconds": 4.0, "text": ""},
+        {"label": "Tension rise", "seconds": 3.0, "text": ""},
+        {"label": "Climax flash", "seconds": 2.0, "text": ""},
+        {"label": "Title card", "seconds": 4.0, "text": "TITLE", "text_position": "center"}
+      ],
+      "director_brief": "A 21-second cinematic teaser at 24fps. Anamorphic feel, heavy contrast, slow push-ins, long dissolves. Build tension across six beats and end on a stark title card over black."
+    },
+    {
+      "id": "explainer-6",
+      "name": "Explainer — 6 steps",
+      "category": "Education",
+      "description": "Numbered steps with on-screen titles. Add narration from the Director.",
+      "canvas": {"width": 1920, "height": 1080, "fps": 30},
+      "crossfade": 0.3,
+      "slots": [
+        {"label": "Title", "seconds": 3.0, "text": "How it works", "text_position": "center"},
+        {"label": "Step 1", "seconds": 4.0, "text": "1", "text_position": "top-left"},
+        {"label": "Step 2", "seconds": 4.0, "text": "2", "text_position": "top-left"},
+        {"label": "Step 3", "seconds": 4.0, "text": "3", "text_position": "top-left"},
+        {"label": "Step 4", "seconds": 4.0, "text": "4", "text_position": "top-left"},
+        {"label": "Summary", "seconds": 4.0, "text": "", "text_position": "center"}
+      ],
+      "director_brief": "A 23-second explainer video with six beats: a title card, four numbered steps shown visually, and a summary. Clean, bright, minimal, plenty of negative space for on-screen text."
+    }
+  ]
+}

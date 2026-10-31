@@ -1,0 +1,517 @@
+{
+  "_readme": [
+    "Model catalogue. Edit this file (or Settings -> Model Hub -> Edit catalogue) to add,",
+    "rename or reroute models WITHOUT touching code. The app hot-reloads it.",
+    "",
+    "openness:  'open'   = weights downloadable, can run locally and free",
+    "           'partial'= some variants/older versions open",
+    "           'closed' = API only, no weights",
+    "",
+    "routes[].verified:  false means the endpoint id is a best guess. Vendors rename",
+    "preview endpoints often. A 404 from the app means: fix the endpoint here.",
+    "Browse real ids at fal.ai/models and replicate.com/explore."
+  ],
+
+  "option_presets": {
+    "video_basic": {
+      "aspect_ratio": {"type": "choice", "choices": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], "default": "16:9"},
+      "duration": {"type": "int", "default": 5, "min": 2, "max": 30, "label": "Seconds"},
+      "resolution": {"type": "choice", "choices": ["480p", "720p", "1080p"], "default": "720p"},
+      "extra_json": {"type": "text", "default": "", "label": "Extra JSON payload (merged verbatim)"}
+    },
+    "video_audio": {
+      "aspect_ratio": {"type": "choice", "choices": ["16:9", "9:16", "1:1"], "default": "16:9"},
+      "duration": {"type": "int", "default": 5, "min": 2, "max": 30, "label": "Seconds"},
+      "resolution": {"type": "choice", "choices": ["480p", "720p", "1080p"], "default": "720p"},
+      "generate_audio": {"type": "bool", "default": true, "label": "Native audio"},
+      "extra_json": {"type": "text", "default": "", "label": "Extra JSON payload (merged verbatim)"}
+    },
+    "image_basic": {
+      "aspect_ratio": {"type": "choice", "choices": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], "default": "1:1"},
+      "num_images": {"type": "int", "default": 1, "min": 1, "max": 4, "label": "Images"},
+      "extra_json": {"type": "text", "default": "", "label": "Extra JSON payload (merged verbatim)"}
+    },
+    "lipsync": {
+      "extra_json": {"type": "text", "default": "", "label": "Extra JSON payload (merged verbatim)"}
+    }
+  },
+
+  "models": [
+    {
+      "id": "seedance-2.5",
+      "label": "Seedance 2.5",
+      "vendor": "ByteDance",
+      "openness": "closed",
+      "tags": ["hot", "audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Up to 50 multimodal references, 30s output, native audio. No weights released; API only.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/bytedance/seedance/v2.5/text-to-video", "capability": "text_to_video", "verified": false},
+        {"provider": "fal", "endpoint": "fal-ai/bytedance/seedance/v2.5/image-to-video", "capability": "image_to_video", "verified": false},
+        {"provider": "volcengine", "endpoint": "doubao-seedance-2-5-pro", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "seedance-2.0",
+      "label": "Seedance 2.0",
+      "vendor": "ByteDance",
+      "openness": "closed",
+      "tags": ["audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Multimodal input with strong reference capabilities.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/bytedance/seedance/v2/text-to-video", "capability": "text_to_video", "verified": false},
+        {"provider": "fal", "endpoint": "fal-ai/bytedance/seedance/v2/image-to-video", "capability": "image_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "seedance-2.0-fast",
+      "label": "Seedance 2.0 Fast",
+      "vendor": "ByteDance",
+      "openness": "closed",
+      "tags": ["audio", "fast"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Faster generation with multimodal reference support. Use for iteration passes.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/bytedance/seedance/v2/fast/text-to-video", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "seedance-2.0-mini",
+      "label": "Seedance 2.0 Mini",
+      "vendor": "ByteDance",
+      "openness": "closed",
+      "tags": ["audio", "cheap"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Lower-cost Seedance for high-volume drafts.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/bytedance/seedance/v2/mini/text-to-video", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "seedance-1.5-pro",
+      "label": "Seedance 1.5 Pro",
+      "vendor": "ByteDance",
+      "openness": "closed",
+      "tags": ["audio", "lipsync"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Joint audio-video with multilingual lip-sync.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/bytedance/seedance/v1.5/pro/text-to-video", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "seedance-1.0-pro",
+      "label": "Seedance 1.0 Pro",
+      "vendor": "ByteDance",
+      "openness": "closed",
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Smooth, stable motion. Native Volcengine Ark route is verified against the Ark docs.",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "volcengine", "endpoint": "doubao-seedance-1-0-pro-250528", "capability": "text_to_video", "verified": true},
+        {"provider": "volcengine", "endpoint": "doubao-seedance-1-0-lite-i2v-250428", "capability": "image_to_video", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/bytedance/seedance/v1/pro/text-to-video", "capability": "text_to_video", "verified": true},
+        {"provider": "replicate", "endpoint": "bytedance/seedance-1-pro", "capability": "text_to_video", "verified": true}
+      ]
+    },
+
+    {
+      "id": "minimax-h3",
+      "label": "MiniMax H3 (Hailuo 3)",
+      "vendor": "MiniMax",
+      "openness": "open",
+      "tags": ["new", "audio", "open-weights"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "OPEN WEIGHTS (published 2026-08-03, ~42.5 GB). Native multimodal with image, video and audio references. Runs locally via ComfyUI, or hosted here.",
+      "repo": "https://huggingface.co/MiniMaxAI",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/minimax/hailuo-h3/text-to-video", "capability": "text_to_video", "verified": false},
+        {"provider": "replicate", "endpoint": "minimax/hailuo-h3", "capability": "text_to_video", "verified": false},
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "hailuo-2.3",
+      "label": "Hailuo 2.3",
+      "vendor": "MiniMax",
+      "openness": "closed",
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Superior motion control and artistic stylization.",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/minimax/hailuo-2.3/text-to-video", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "hailuo-02",
+      "label": "Hailuo 02",
+      "vendor": "MiniMax",
+      "openness": "closed",
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Extreme physics and gymnastic-level motion.",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/minimax/hailuo-02/standard/text-to-video", "capability": "text_to_video", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/minimax/hailuo-02/standard/image-to-video", "capability": "image_to_video", "verified": true}
+      ]
+    },
+
+    {
+      "id": "kling-3.0",
+      "label": "Kling 3.0",
+      "vendor": "Kuaishou",
+      "openness": "closed",
+      "tags": ["audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Multi-shot cinematic storytelling, up to 15s with audio.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/kling-video/v3/master/text-to-video", "capability": "text_to_video", "verified": false},
+        {"provider": "fal", "endpoint": "fal-ai/kling-video/v3/master/image-to-video", "capability": "image_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "kling-2.6",
+      "label": "Kling 2.6",
+      "vendor": "Kuaishou",
+      "openness": "closed",
+      "tags": ["audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Cinematic video with synced sound.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/kling-video/v2.6/master/text-to-video", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "kling-2.5-turbo",
+      "label": "Kling 2.5 Turbo",
+      "vendor": "Kuaishou",
+      "openness": "closed",
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Cinematic video with emotional depth.",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/kling-video/v2.5-turbo/pro/text-to-video", "capability": "text_to_video", "verified": false},
+        {"provider": "fal", "endpoint": "fal-ai/kling-video/v2.5-turbo/pro/image-to-video", "capability": "image_to_video", "verified": false}
+      ]
+    },
+
+    {
+      "id": "veo-3.1",
+      "label": "Veo 3.1",
+      "vendor": "Google",
+      "openness": "closed",
+      "tags": ["audio", "multi-image"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Native synchronised audio and dialogue. Native Google route is verified.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "google", "endpoint": "veo-3.1-generate-preview", "capability": "text_to_video", "verified": true},
+        {"provider": "google", "endpoint": "veo-3.1-fast-generate-preview", "capability": "text_to_video", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/veo3", "capability": "text_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "grok-imagine-1.5",
+      "label": "Grok Imagine 1.5",
+      "vendor": "xAI",
+      "openness": "closed",
+      "tags": ["audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Native audio with flexible duration.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/xai/grok-imagine-1.5/text-to-video", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "grok-imagine",
+      "label": "Grok Imagine",
+      "vendor": "xAI",
+      "openness": "closed",
+      "tags": ["audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "10s 720p with native audio.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/xai/grok-imagine/text-to-video", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "pixverse-v5",
+      "label": "Pixverse V5",
+      "vendor": "PixVerse",
+      "openness": "closed",
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Smooth animation with camera control.",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/pixverse/v5/text-to-video", "capability": "text_to_video", "verified": false},
+        {"provider": "fal", "endpoint": "fal-ai/pixverse/v5/image-to-video", "capability": "image_to_video", "verified": false}
+      ]
+    },
+
+    {
+      "id": "wan-2.7",
+      "label": "Wan 2.7",
+      "vendor": "Alibaba",
+      "openness": "partial",
+      "tags": ["audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Some 2.7 weights surfaced on ModelScope under unclear terms. Wan 2.2 is the safe open flagship. API route below.",
+      "repo": "https://github.com/Wan-Video",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "dashscope", "endpoint": "wan2.7-t2v-preview", "capability": "text_to_video", "verified": false},
+        {"provider": "fal", "endpoint": "fal-ai/wan/v2.7/text-to-video", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "wan-2.6",
+      "label": "Wan 2.6",
+      "vendor": "Alibaba",
+      "openness": "closed",
+      "tags": ["audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Character reference and multi-shot up to 15s. API-only release.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "dashscope", "endpoint": "wan2.6-t2v-preview", "capability": "text_to_video", "verified": false}
+      ]
+    },
+    {
+      "id": "wan-2.5",
+      "label": "Wan 2.5",
+      "vendor": "Alibaba",
+      "openness": "closed",
+      "tags": ["audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "High-quality video with synchronised audio. API-only release.",
+      "options_preset": "video_audio",
+      "routes": [
+        {"provider": "dashscope", "endpoint": "wan2.5-t2v-preview", "capability": "text_to_video", "verified": true},
+        {"provider": "dashscope", "endpoint": "wan2.5-i2v-preview", "capability": "image_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "wan-2.2",
+      "label": "Wan 2.2  [OPEN WEIGHTS]",
+      "vendor": "Alibaba",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Apache 2.0 MoE model, the open flagship. Runs locally on a 24 GB GPU via ComfyUI. Free.",
+      "repo": "https://github.com/Wan-Video/Wan2.2",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_video", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/wan/v2.2-a14b/text-to-video", "capability": "text_to_video", "verified": true},
+        {"provider": "replicate", "endpoint": "wan-video/wan-2.2-t2v-fast", "capability": "text_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "ltx-2",
+      "label": "LTX-2 / LTX-Video  [OPEN WEIGHTS]",
+      "vendor": "Lightricks",
+      "openness": "open",
+      "tags": ["open-weights", "local", "fast", "audio"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "First open model with synced audio+video in one pass. Fastest open inference; runs on 8 GB VRAM. Free.",
+      "repo": "https://github.com/Lightricks/LTX-Video",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_video", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/ltx-video-13b-distilled", "capability": "text_to_video", "verified": true},
+        {"provider": "replicate", "endpoint": "lightricks/ltx-video", "capability": "text_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "hunyuan-video",
+      "label": "HunyuanVideo  [OPEN WEIGHTS]",
+      "vendor": "Tencent",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "13B cinematic model, exceptional motion quality. Wants a 3090/4090/A6000. Free.",
+      "repo": "https://github.com/Tencent-Hunyuan/HunyuanVideo",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_video", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/hunyuan-video", "capability": "text_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "mochi-1",
+      "label": "Mochi 1  [OPEN WEIGHTS]",
+      "vendor": "Genmo",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["text_to_video"],
+      "notes": "Apache 2.0. Strong photorealistic text-to-video. Free.",
+      "repo": "https://github.com/genmoai/mochi",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_video", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/mochi-v1", "capability": "text_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "cogvideox",
+      "label": "CogVideoX  [OPEN WEIGHTS]",
+      "vendor": "Zhipu / THUDM",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Strong image-to-video. Runs on modest GPUs. Free.",
+      "repo": "https://github.com/THUDM/CogVideo",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "image_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "skyreels-v2",
+      "label": "SkyReels V2  [OPEN WEIGHTS]",
+      "vendor": "Skywork",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["text_to_video", "image_to_video"],
+      "notes": "Human-centric, infinite-length autoregressive video. Free.",
+      "repo": "https://github.com/SkyworkAI/SkyReels-V2",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_video", "verified": true}
+      ]
+    },
+    {
+      "id": "framepack",
+      "label": "FramePack  [OPEN WEIGHTS]",
+      "vendor": "lllyasviel",
+      "openness": "open",
+      "tags": ["open-weights", "local", "low-vram"],
+      "capabilities": ["image_to_video"],
+      "notes": "Generates long video on as little as 6 GB VRAM. The best low-end local option. Free.",
+      "repo": "https://github.com/lllyasviel/FramePack",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "image_to_video", "verified": true}
+      ]
+    },
+
+    {
+      "id": "lipsync",
+      "label": "Lip Sync",
+      "vendor": "various",
+      "openness": "open",
+      "tags": ["audio", "open-weights"],
+      "capabilities": ["lip_sync"],
+      "notes": "Make a portrait talk in sync with any audio. LatentSync (ByteDance) and MuseTalk are open and free; hosted routes below are faster.",
+      "repo": "https://github.com/bytedance/LatentSync",
+      "options_preset": "lipsync",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/latentsync", "capability": "lip_sync", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/sync-lipsync", "capability": "lip_sync", "verified": false},
+        {"provider": "replicate", "endpoint": "bytedance/latentsync", "capability": "lip_sync", "verified": false},
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "lip_sync", "verified": true}
+      ]
+    },
+    {
+      "id": "motion-control",
+      "label": "Motion Control / transfer",
+      "vendor": "various",
+      "openness": "open",
+      "tags": ["open-weights"],
+      "capabilities": ["motion_transfer"],
+      "notes": "Drive a character image with motion from a reference video. Open: Wan2.1-VACE, MimicMotion, Champ, UniAnimate, StableAnimator.",
+      "repo": "https://github.com/ali-vilab/VACE",
+      "options_preset": "video_basic",
+      "routes": [
+        {"provider": "fal", "endpoint": "fal-ai/wan-vace-14b", "capability": "motion_transfer", "verified": false},
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "motion_transfer", "verified": true}
+      ]
+    },
+
+    {
+      "id": "nano-banana",
+      "label": "Nano Banana (Gemini 2.5 Flash Image)",
+      "vendor": "Google",
+      "openness": "closed",
+      "capabilities": ["text_to_image", "image_edit"],
+      "notes": "Conversational image editing with strong character consistency.",
+      "options_preset": "image_basic",
+      "routes": [
+        {"provider": "google", "endpoint": "gemini-2.5-flash-image", "capability": "image_edit", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/nano-banana", "capability": "image_edit", "verified": true},
+        {"provider": "replicate", "endpoint": "google/nano-banana", "capability": "image_edit", "verified": true}
+      ]
+    },
+    {
+      "id": "flux-1-dev",
+      "label": "FLUX.1 dev  [OPEN WEIGHTS]",
+      "vendor": "Black Forest Labs",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["text_to_image"],
+      "notes": "The open image workhorse. FLUX.1 schnell is Apache 2.0 and fully free for commercial use. Free locally.",
+      "repo": "https://github.com/black-forest-labs/flux",
+      "options_preset": "image_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_image", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/flux/dev", "capability": "text_to_image", "verified": true},
+        {"provider": "replicate", "endpoint": "black-forest-labs/flux-dev", "capability": "text_to_image", "verified": true}
+      ]
+    },
+    {
+      "id": "flux-kontext",
+      "label": "FLUX.1 Kontext dev  [OPEN WEIGHTS]",
+      "vendor": "Black Forest Labs",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["image_edit"],
+      "notes": "Open instruction-based image editing. The free alternative to Nano Banana.",
+      "repo": "https://github.com/black-forest-labs/flux",
+      "options_preset": "image_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "image_edit", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/flux-pro/kontext", "capability": "image_edit", "verified": true}
+      ]
+    },
+    {
+      "id": "qwen-image",
+      "label": "Qwen-Image  [OPEN WEIGHTS]",
+      "vendor": "Alibaba",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["text_to_image", "image_edit"],
+      "notes": "Apache 2.0. Exceptional text rendering inside images. Free.",
+      "repo": "https://github.com/QwenLM/Qwen-Image",
+      "options_preset": "image_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_image", "verified": true},
+        {"provider": "fal", "endpoint": "fal-ai/qwen-image", "capability": "text_to_image", "verified": false}
+      ]
+    },
+    {
+      "id": "sdxl",
+      "label": "SDXL / SD 3.5  [OPEN WEIGHTS]",
+      "vendor": "Stability AI",
+      "openness": "open",
+      "tags": ["open-weights", "local"],
+      "capabilities": ["text_to_image", "image_edit"],
+      "notes": "The most tooled-for open image models: ControlNet, IP-Adapter, LoRA ecosystem. Free.",
+      "repo": "https://github.com/Stability-AI/generative-models",
+      "options_preset": "image_basic",
+      "routes": [
+        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_image", "verified": true}
+      ]
+    }
+  ]
+}

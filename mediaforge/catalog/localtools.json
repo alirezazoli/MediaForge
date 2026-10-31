@@ -1,0 +1,237 @@
+{
+  "_readme": [
+    "Free / open-source tools that run LOCALLY with no API key and no per-use cost.",
+    "The Model Hub panel installs these on demand -- nothing is downloaded until you click.",
+    "",
+    "install.kind:",
+    "  'zip'    portable release archive -> extracted into <appdata>/MediaForge/tools/<id>/",
+    "  'pip'    installed into the running interpreter's environment",
+    "  'manual' too big or too setup-heavy to automate; the Hub opens the repo instead",
+    "",
+    "'ncnn' tools are self-contained .exe + model files. No Python, no CUDA -- they run on",
+    "any Vulkan GPU including AMD and Intel, which is why they are the default local engines."
+  ],
+
+  "tools": [
+    {
+      "id": "realesrgan",
+      "name": "Real-ESRGAN (ncnn-vulkan)",
+      "category": "upscale",
+      "media": ["image", "video"],
+      "license": "BSD-3-Clause",
+      "repo": "https://github.com/xinntao/Real-ESRGAN",
+      "summary": "The standard AI upscaler. 2x/3x/4x for photos, plus an anime-tuned model.",
+      "install": {
+        "kind": "zip",
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip",
+        "size_mb": 28,
+        "executable": "realesrgan-ncnn-vulkan.exe"
+      },
+      "models": ["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3"],
+      "options": {
+        "scale": {"type": "choice", "choices": ["2", "3", "4"], "default": "4"},
+        "model": {"type": "choice", "choices": ["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3"], "default": "realesrgan-x4plus"},
+        "tile": {"type": "int", "default": 0, "min": 0, "max": 1024, "label": "Tile size (0 = auto, lower if VRAM errors)"}
+      }
+    },
+    {
+      "id": "realcugan",
+      "name": "Real-CUGAN (ncnn-vulkan)",
+      "category": "upscale",
+      "media": ["image", "video"],
+      "license": "MIT",
+      "repo": "https://github.com/nihui/realcugan-ncnn-vulkan",
+      "summary": "Better than Real-ESRGAN on illustration and anime. Adjustable denoise strength.",
+      "install": {
+        "kind": "zip",
+        "url": "https://github.com/nihui/realcugan-ncnn-vulkan/releases/download/20220728/realcugan-ncnn-vulkan-20220728-windows.zip",
+        "size_mb": 55,
+        "executable": "realcugan-ncnn-vulkan.exe"
+      },
+      "options": {
+        "scale": {"type": "choice", "choices": ["2", "3", "4"], "default": "2"},
+        "noise": {"type": "choice", "choices": ["-1", "0", "1", "2", "3"], "default": "-1", "label": "Denoise (-1 = none, 3 = strongest)"}
+      }
+    },
+    {
+      "id": "waifu2x",
+      "name": "waifu2x (ncnn-vulkan)",
+      "category": "upscale",
+      "media": ["image"],
+      "license": "MIT",
+      "repo": "https://github.com/nihui/waifu2x-ncnn-vulkan",
+      "summary": "Classic denoise + upscale. Gentlest on soft/flat artwork.",
+      "install": {
+        "kind": "zip",
+        "url": "https://github.com/nihui/waifu2x-ncnn-vulkan/releases/download/20220728/waifu2x-ncnn-vulkan-20220728-windows.zip",
+        "size_mb": 40,
+        "executable": "waifu2x-ncnn-vulkan.exe"
+      },
+      "options": {
+        "scale": {"type": "choice", "choices": ["1", "2", "4"], "default": "2"},
+        "noise": {"type": "choice", "choices": ["-1", "0", "1", "2", "3"], "default": "1"}
+      }
+    },
+    {
+      "id": "rife",
+      "name": "RIFE (ncnn-vulkan)",
+      "category": "interpolate",
+      "media": ["video"],
+      "license": "MIT",
+      "repo": "https://github.com/nihui/rife-ncnn-vulkan",
+      "summary": "Frame interpolation: 30 -> 60/120 fps, or smooth slow motion. Also see Practical-RIFE.",
+      "install": {
+        "kind": "zip",
+        "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
+        "size_mb": 55,
+        "executable": "rife-ncnn-vulkan.exe"
+      },
+      "options": {
+        "factor": {"type": "choice", "choices": ["2", "4", "8"], "default": "2", "label": "FPS multiplier"},
+        "model": {"type": "choice", "choices": ["rife-v4.6", "rife-v4", "rife-anime"], "default": "rife-v4.6"}
+      }
+    },
+    {
+      "id": "rembg",
+      "name": "rembg (U2Net / BiRefNet / SAM)",
+      "category": "matting",
+      "media": ["image"],
+      "license": "MIT",
+      "repo": "https://github.com/danielgatis/rembg",
+      "summary": "Background removal for stills. BiRefNet gives the cleanest hair and edge detail.",
+      "install": {"kind": "pip", "package": "rembg[cli]", "size_mb": 180, "module": "rembg"},
+      "options": {
+        "model": {"type": "choice", "choices": ["u2net", "isnet-general-use", "birefnet-general", "u2net_human_seg"], "default": "birefnet-general"},
+        "alpha_matting": {"type": "bool", "default": false, "label": "Alpha matting (slower, better edges)"}
+      }
+    },
+    {
+      "id": "faster-whisper",
+      "name": "faster-whisper",
+      "category": "transcribe",
+      "media": ["video", "audio"],
+      "license": "MIT",
+      "repo": "https://github.com/SYSTRAN/faster-whisper",
+      "summary": "Local speech-to-text with word timings. Feeds the subtitle burner. Free, offline, 99 languages.",
+      "install": {"kind": "pip", "package": "faster-whisper", "size_mb": 120, "module": "faster_whisper"},
+      "options": {
+        "model": {"type": "choice", "choices": ["tiny", "base", "small", "medium", "large-v3"], "default": "base"},
+        "language": {"type": "str", "default": "", "label": "Language code (blank = auto)"},
+        "device": {"type": "choice", "choices": ["auto", "cpu", "cuda"], "default": "auto"}
+      }
+    },
+    {
+      "id": "demucs",
+      "name": "Demucs",
+      "category": "audio",
+      "media": ["video", "audio"],
+      "license": "MIT",
+      "repo": "https://github.com/adefossez/demucs",
+      "summary": "Separates audio into vocals / drums / bass / other. Use it to strip music from dialogue.",
+      "install": {"kind": "pip", "package": "demucs", "size_mb": 900, "module": "demucs"},
+      "options": {
+        "stem": {"type": "choice", "choices": ["all", "vocals", "drums", "bass", "other"], "default": "vocals"},
+        "model": {"type": "choice", "choices": ["htdemucs", "htdemucs_ft", "mdx_extra"], "default": "htdemucs"}
+      }
+    },
+
+    {
+      "id": "gyroflow",
+      "name": "Gyroflow",
+      "category": "stabilize",
+      "media": ["video"],
+      "license": "GPL-3.0",
+      "repo": "https://github.com/gyroflow/gyroflow",
+      "summary": "Best-in-class stabilisation using gyro data from GoPro/DJI/Insta360. Beats any optical method.",
+      "install": {"kind": "manual", "size_mb": 120}
+    },
+    {
+      "id": "codeformer",
+      "name": "CodeFormer",
+      "category": "restore",
+      "media": ["image", "video"],
+      "license": "S-Lab (non-commercial)",
+      "repo": "https://github.com/sczhou/CodeFormer",
+      "summary": "Face restoration for old/blurry footage, with a fidelity-vs-quality dial.",
+      "install": {"kind": "manual", "size_mb": 400}
+    },
+    {
+      "id": "gfpgan",
+      "name": "GFPGAN",
+      "category": "restore",
+      "media": ["image"],
+      "license": "Apache-2.0",
+      "repo": "https://github.com/TencentARC/GFPGAN",
+      "summary": "Face restoration. Pairs with Real-ESRGAN for the background.",
+      "install": {"kind": "manual", "size_mb": 350}
+    },
+    {
+      "id": "propainter",
+      "name": "ProPainter",
+      "category": "inpaint",
+      "media": ["video"],
+      "license": "S-Lab (non-commercial)",
+      "repo": "https://github.com/sczhou/ProPainter",
+      "summary": "Video object removal and inpainting. Mask a thing out and it fills the hole across time.",
+      "install": {"kind": "manual", "size_mb": 500}
+    },
+    {
+      "id": "sam2",
+      "name": "SAM 2 (Segment Anything 2)",
+      "category": "matting",
+      "media": ["image", "video"],
+      "license": "Apache-2.0",
+      "repo": "https://github.com/facebookresearch/sam2",
+      "summary": "Click an object, track it through the whole clip. The open rotoscoping engine.",
+      "install": {"kind": "manual", "size_mb": 900}
+    },
+    {
+      "id": "rvm",
+      "name": "RobustVideoMatting",
+      "category": "matting",
+      "media": ["video"],
+      "license": "GPL-3.0",
+      "repo": "https://github.com/PeterL1n/RobustVideoMatting",
+      "summary": "Real-time green-screen-free background removal for video.",
+      "install": {"kind": "manual", "size_mb": 100}
+    },
+    {
+      "id": "auto-editor",
+      "name": "Auto-Editor",
+      "category": "edit",
+      "media": ["video"],
+      "license": "Unlicense",
+      "repo": "https://github.com/WyattBlue/auto-editor",
+      "summary": "Battle-tested silence/motion cutting. An alternative engine to the built-in jump-cut.",
+      "install": {"kind": "pip", "package": "auto-editor", "size_mb": 15, "module": "auto_editor"},
+      "options": {
+        "threshold": {"type": "float", "default": 0.04, "min": 0.0, "max": 1.0, "label": "Audio threshold"},
+        "margin": {"type": "str", "default": "0.2sec", "label": "Margin around speech"}
+      }
+    },
+    {
+      "id": "kokoro",
+      "name": "Kokoro TTS",
+      "category": "tts",
+      "media": ["audio"],
+      "license": "Apache-2.0",
+      "repo": "https://github.com/hexgrad/kokoro",
+      "summary": "82M-parameter TTS. Runs fast on CPU, quality near paid services. Free voiceover.",
+      "install": {"kind": "pip", "package": "kokoro", "size_mb": 400, "module": "kokoro"},
+      "options": {
+        "voice": {"type": "choice", "choices": ["af_heart", "af_bella", "am_michael", "bf_emma", "bm_george"], "default": "af_heart"},
+        "speed": {"type": "float", "default": 1.0, "min": 0.5, "max": 2.0}
+      }
+    },
+    {
+      "id": "comfyui",
+      "name": "ComfyUI",
+      "category": "engine",
+      "media": ["image", "video"],
+      "license": "GPL-3.0",
+      "repo": "https://github.com/comfyanonymous/ComfyUI",
+      "summary": "The local engine for every open model above -- Wan 2.2, LTX-2, HunyuanVideo, FLUX, MiniMax H3, SDXL, LatentSync, VACE. Install it, then point Settings -> ComfyUI URL at it.",
+      "install": {"kind": "manual", "size_mb": 2000}
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Build output lives outside Dropbox (see packaging/build.ps1), but never commit it
+build/
+dist/
+installer/Output/
+
+# Bundled third-party binaries are fetched at build time, not stored in git
+packaging/vendor/
+
+# Renders made from private client photos
+samples/
+
+# Editor state
+.vscode/
+.idea/
