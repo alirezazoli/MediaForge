@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from .. import availability
 from ..context import AppContext
-from . import theme
+from . import icons, theme
 
 
 class TaskCard(QFrame):
@@ -35,9 +35,15 @@ class TaskCard(QFrame):
         layout.setSpacing(6)
 
         top = QHBoxLayout()
-        glyph = QLabel(icon)
-        glyph.setObjectName("glyph")
-        top.addWidget(glyph)
+        # The same glyph as the screen's entry in the drawer, in a tonal circle, so a
+        # card and the place it leads to are recognisably the same thing.
+        self._icon = icon
+        self.glyph = QLabel()
+        self.glyph.setObjectName("cardIcon")
+        self.glyph.setFixedSize(40, 40)
+        self.glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.glyph.setPixmap(icons.pixmap(icon, "@ACCENT", 20))
+        top.addWidget(self.glyph)
         top.addStretch(1)
         if tag:
             badge = QLabel(tag)
@@ -67,6 +73,7 @@ class TaskCard(QFrame):
 
     def restyle(self) -> None:
         self.setStyleSheet("")
+        self.glyph.setPixmap(icons.pixmap(self._icon, "@ACCENT", 20))
 
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -104,22 +111,22 @@ class HomePanel(QWidget):
         grid = QGridLayout()
         grid.setSpacing(14)
         cards = [
-            ("🖼", "Photos to video", "Drop photos, get a clip with slow camera moves, "
+            ("photos", "Photos to video", "Drop photos, get a clip with slow camera moves, "
                                      "crossfades and music. Nothing else needed.",
              "", "photos"),
-            ("✂", "Edit a video", "Trim, cut silence, reframe for social, stabilise, "
+            ("edit", "Edit a video", "Trim, cut silence, reframe for social, stabilise, "
                                   "titles, colour, subtitles, export presets.",
              "", "edit"),
-            ("✨", "Enhance", "Upscale, sharpen, remove background, transcribe, "
+            ("enhance", "Enhance", "Upscale, sharpen, remove background, transcribe, "
                              "separate audio — all on your own machine.",
              "", "enhance"),
-            ("🎬", "Generate with AI", "Text or a photo into new video and images. "
+            ("generate", "Generate with AI", "Text or a photo into new video and images. "
                                        "Needs an API key, or a local ComfyUI.",
              "", "generate"),
-            ("🎥", "Direct a whole video", "Describe it once. It writes the shots, makes "
+            ("director", "Direct a whole video", "Describe it once. It writes the shots, makes "
                                            "them, and assembles the cut.",
              "", "director"),
-            ("📐", "Start from a template", "Reel hooks, product films, slideshows, "
+            ("templates", "Start from a template", "Reel hooks, product films, slideshows, "
                                             "explainers, trailers.",
              "", "templates"),
         ]

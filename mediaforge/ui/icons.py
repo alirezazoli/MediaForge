@@ -78,6 +78,9 @@ def pixmap(name: str, colour: str | None = None, size: int = 16) -> QPixmap:
     painter.setPen(QColor(_resolve_colour(colour)))
     painter.drawText(canvas.rect(), Qt.AlignmentFlag.AlignCenter, glyph)
     painter.end()
+    # Without the ratio a QLabel shows the 2x canvas at twice the asked-for size; with
+    # it, labels and icons both lay it out at `size` and use the extra pixels for detail.
+    canvas.setDevicePixelRatio(scale)
     return canvas
 
 

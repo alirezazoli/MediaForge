@@ -9,30 +9,38 @@ from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QTextEdit,
-    QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QTextEdit, QVBoxLayout,
+    QWidget,
 )
 
 from .. import ffmpeg_tools, localai
 from ..context import AppContext
 from ..project import Asset
 from .stepper import Step, StepFlow
-from .widgets import Card, MediaPreview, OptionsForm
+from .widgets import Card, MediaPreview, OptionsForm, TileGrid
 from . import theme
 
-# (label, tool id, capability key)
-OPERATIONS: list[tuple[str, str, str]] = [
-    ("Upscale image (Real-ESRGAN)", "realesrgan", "upscale_image"),
-    ("Upscale image (Real-CUGAN, art)", "realcugan", "upscale_image"),
-    ("Upscale image (waifu2x)", "waifu2x", "upscale_image"),
-    ("Upscale video (Real-ESRGAN)", "realesrgan", "upscale_video"),
-    ("Upscale video (Real-CUGAN)", "realcugan", "upscale_video"),
-    ("Interpolate to higher fps (RIFE)", "rife", "interpolate"),
-    ("Remove background (rembg)", "rembg", "matte"),
-    ("Transcribe + build subtitles (Whisper)", "faster-whisper", "transcribe"),
-    ("Separate audio stems (Demucs)", "demucs", "stems"),
-    ("Text to speech (Kokoro)", "kokoro", "tts"),
+# (group, [(label, tool id, capability key, glyph)])
+OPERATION_GROUPS: list[tuple[str, list[tuple[str, str, str, str]]]] = [
+    ("Upscale", [
+        ("Photo (Real-ESRGAN)", "realesrgan", "upscale_image", "image"),
+        ("Drawing (Real-CUGAN)", "realcugan", "upscale_image", "edit"),
+        ("Drawing, gentle (waifu2x)", "waifu2x", "upscale_image", "edit"),
+        ("Video (Real-ESRGAN)", "realesrgan", "upscale_video", "video"),
+        ("Animated video (Real-CUGAN)", "realcugan", "upscale_video", "video"),
+    ]),
+    ("Motion & picture", [
+        ("Smoother motion (RIFE)", "rife", "interpolate", "speed"),
+        ("Remove background (rembg)", "rembg", "matte", "layers"),
+    ]),
+    ("Sound & speech", [
+        ("Subtitles from speech (Whisper)", "faster-whisper", "transcribe", "captions"),
+        ("Split into stems (Demucs)", "demucs", "stems", "sliders"),
+        ("Text to speech (Kokoro)", "kokoro", "tts", "volume"),
+    ]),
 ]
+OPERATIONS = {f"{tool_id}:{kind}": (label, tool_id, kind)
+              for _, entries in OPERATION_GROUPS for label, tool_id, kind, _ in entries}
 
 
 def _page(inner: QWidget) -> QWidget:
@@ -97,12 +105,16 @@ class EnhancePanel(QWidget):
         layout = QVBoxLayout(job_page)
         layout.setSpacing(theme.SPACE_3)
 
-        operation_card = Card("Operation")
-        self.operation_box = QComboBox()
-        for label, tool_id, kind in OPERATIONS:
-            self.operation_box.addItem(label, (tool_id, kind))
-        self.operation_box.currentIndexChanged.connect(self._on_operation_changed)
-        operation_card.body.addWidget(self.operation_box)
+        self.tiles = TileGrid([
+            (group, [(f"{tool_id}:{kind}", label, glyph, "")
+                     for label, tool_id, kind, glyph in entries])
+            for group, entries in OPERATION_GROUPS
+        ])
+        self.tiles.chosen.connect(lambda _key: self._on_operation_changed())
+        self.tiles.select("realesrgan:upscale_image")
+        layout.addWidget(self.tiles)
+
+        operation_card = Card("Engine")
         self.tool_status = QLabel("")
         self.tool_status.setWordWrap(True)
         operation_card.body.addWidget(self.tool_status)
@@ -165,11 +177,15 @@ class EnhancePanel(QWidget):
 
     # -- state ---------------------------------------------------------------------------
     def _current(self) -> tuple[localai.LocalTool | None, str]:
-        data = self.operation_box.currentData()
-        if not data:
+        entry = OPERATIONS.get(self.tiles.current())
+        if entry is None:
             return None, ""
-        tool_id, kind = data
+        _, tool_id, kind = entry
         return self.context.local_tools.get(tool_id), kind
+
+    def _operation_label(self) -> str:
+        entry = OPERATIONS.get(self.tiles.current())
+        return entry[0] if entry else ""
 
     def _on_operation_changed(self) -> None:
         tool, _ = self._current()
@@ -342,9 +358,9 @@ class EnhancePanel(QWidget):
         if hasattr(self, 'flow'):
             self.flow.go_to(len(self.flow.steps) - 1)
         job = self.context.jobs.submit(
-            f"{self.operation_box.currentText()}", work, category="enhance"
+            f"{self._operation_label()}", work, category="enhance"
         )
-        self.status.emit(f"Job {job.id}: {self.operation_box.currentText()}")
+        self.status.emit(f"Job {job.id}: {self._operation_label()}")
 
     def show_result(self, result) -> None:
         if isinstance(result, Path):

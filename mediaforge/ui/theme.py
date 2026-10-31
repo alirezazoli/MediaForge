@@ -347,6 +347,10 @@ QLabel#brand {{
     color: {p['onSurface']}; padding: 2px 4px 2px 8px;
 }}
 
+QLabel#cardIcon {{
+    background: {p['secondaryContainer']}; border-radius: 20px;
+}}
+
 /* --------------------------------------------------------------------- tiles ---- */
 /* A choice among many: tonal at rest, outlined in the accent when chosen -- the same
    language as the navigation drawer, so "this one is selected" reads the same everywhere. */

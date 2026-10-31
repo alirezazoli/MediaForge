@@ -155,7 +155,7 @@ class Settings:
     custom_fal_models: str = ""              # one model id per line
     custom_replicate_models: str = ""        # one owner/name per line
     proxy_url: str = ""
-    theme: str = "dark"
+    theme: str = "light"            # Google-style light by default
     learning_enabled: bool = True
     sidebar_order: list[str] = field(default_factory=list)
     sidebar_advanced: bool = False
