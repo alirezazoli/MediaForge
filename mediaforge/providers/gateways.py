@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from . import comfy_builtin
 from .base import (
     Capability, GenerationRequest, GenerationResult, ModelSpec, Provider, ProviderError,
 )
@@ -673,6 +674,23 @@ class ComfyUIProvider(Provider):
 
     models = [
         ModelSpec(
+            id=comfy_builtin.WAN22_ID,
+            label="Wan 2.2 5B (built in)",
+            capabilities=[Capability.IMAGE_TO_VIDEO, Capability.TEXT_TO_VIDEO],
+            notes="Runs on this PC through ComfyUI with the Wan 2.2 TI2V 5B weights -- no "
+                  "workflow to export. A photo comes to life: foliage, water and light move; "
+                  "the camera stays put, and the photo film adds its own camera move. "
+                  "Standard quality takes about 4-5 minutes per clip on an 8 GB laptop GPU.",
+            options={
+                "quality": {"type": "choice", "default": "Standard",
+                            "choices": list(comfy_builtin.SIZES), "label": "Quality"},
+                "seconds": {"type": "float", "default": 3.4, "min": 0.8, "max": 3.4,
+                            "label": "Length (seconds)"},
+                "cfg": {"type": "float", "default": 5.0, "min": 1.0, "max": 10.0,
+                        "label": "Prompt strength"},
+            },
+        ),
+        ModelSpec(
             id="workflow",
             label="Run a saved API-format workflow",
             capabilities=[Capability.TEXT_TO_IMAGE, Capability.IMAGE_EDIT,
@@ -728,7 +746,22 @@ class ComfyUIProvider(Provider):
         type(self)._reach_cache = (now, alive)
         return alive
 
+    def builtin_status(self, model_id: str) -> tuple[bool, str]:
+        """Whether a built-in graph can run now, and if not, the exact reason."""
+        if model_id != comfy_builtin.WAN22_ID:
+            return False, "Not a built-in model."
+        if not self.reachable():
+            return False, (f"ComfyUI is not running at {self.base_url}. Start it and Wan 2.2 "
+                           "runs on this PC.")
+        if comfy_builtin.find_wan22_files(self.base_url) is None:
+            return False, ("ComfyUI is running but the Wan 2.2 5B files are missing: "
+                           "wan2.2_ti2v_5B_fp16 (diffusion_models), umt5_xxl (text_encoders) "
+                           "and wan2.2_vae (vae).")
+        return True, "Runs on this PC through ComfyUI."
+
     def generate(self, request, progress=lambda f, m: None, should_cancel=None) -> GenerationResult:
+        if request.model_id == comfy_builtin.WAN22_ID:
+            return self._generate_wan22(request, progress, should_cancel)
         started = time.time()
         workflow_path = Path(request.options.get("workflow_path", ""))
         if not workflow_path.is_file():
@@ -795,5 +828,162 @@ class ComfyUIProvider(Provider):
             raise ProviderError("ComfyUI finished but produced no saved output nodes.")
         return GenerationResult(
             files=files, raw=history, provider=self.key, model_id=request.model_id,
-            elapsed_seconds=time.time() - started, cost_note="local, free",
+            elapsed_seconds=time.time() - started, cost_note="runs on this PC",
         )
+
+    # -- built-in Wan 2.2 -----------------------------------------------------------------
+    def _generate_wan22(self, request, progress, should_cancel) -> GenerationResult:
+        started = time.time()
+        ready, reason = self.builtin_status(request.model_id)
+        if not ready:
+            raise ProviderError(reason)
+        files = comfy_builtin.find_wan22_files(self.base_url)
+        options = request.options
+
+        quality = options.get("quality") or "Standard"
+        aspect = str(options.get("aspect_ratio") or "16:9")
+        try:
+            aspect_width, aspect_height = (int(part) for part in aspect.split(":"))
+        except ValueError:
+            aspect_width, aspect_height = 16, 9
+        width, height = comfy_builtin.size_for(aspect_width, aspect_height, quality)
+        seconds = float(options.get("seconds") or options.get("duration_seconds")
+                        or options.get("duration") or 3.4)
+        length = comfy_builtin.frames_for(seconds)
+        steps = int(options.get("steps") or comfy_builtin.STEPS.get(quality, 20))
+        cfg = float(options.get("cfg") or 5.0)
+        seed = request.seed if request.seed is not None else int(time.time()) % 2_147_483_647
+        prompt = request.prompt.strip() or (
+            "Natural, subtle motion in the scene; the camera holds steady. Keep everything "
+            "in the image exactly as it is.")
+        negative = ", ".join(part for part in (request.negative_prompt.strip(),
+                                               comfy_builtin.DEFAULT_NEGATIVE) if part)
+
+        image_name = None
+        if request.capability == Capability.IMAGE_TO_VIDEO or request.reference_images:
+            if not request.reference_images:
+                raise ProviderError("Image to video needs a photo to start from.")
+            progress(0.02, "Sending the photo to ComfyUI")
+            image_name = comfy_builtin.upload_image(self.base_url,
+                                                    Path(request.reference_images[0]))
+
+        single_file = comfy_builtin.has_node(self.base_url, "SaveWEBM")
+        prefix = f"mediaforge/wan_{uuid.uuid4().hex[:8]}"
+        graph = comfy_builtin.wan22_graph(files, prompt, negative, image_name, width, height,
+                                          length, steps, cfg, seed, prefix, single_file)
+
+        stage_labels = {"1": (0.04, "Loading Wan 2.2"), "2": (0.06, "Loading the text encoder"),
+                        "10": (0.92, "Decoding the frames"), "11": (0.96, "Saving the clip")}
+
+        def on_step(value: int, maximum: int, node: str) -> None:
+            if value >= 0 and node == "9":
+                progress(0.1 + 0.8 * value / max(1, maximum),
+                         f"Wan 2.2 on this PC: step {value} of {maximum}")
+            elif value < 0 and node in stage_labels:
+                progress(*stage_labels[node])
+
+        client_id = str(uuid.uuid4())
+        listener = comfy_builtin.ProgressSocket(self.base_url, client_id, on_step)
+        listener.start()
+        listener.connected.wait(3.0)
+        try:
+            queued = request_json("POST", f"{self.base_url}/prompt",
+                                  json_body={"prompt": graph, "client_id": client_id})
+            prompt_id = queued.get("prompt_id")
+            if not prompt_id:
+                raise ProviderError(f"ComfyUI rejected the Wan 2.2 graph: {str(queued)[:400]}")
+            listener.prompt_id = prompt_id
+            progress(0.08, "Queued in ComfyUI")
+            entry = self._wait_for(prompt_id, should_cancel)
+        finally:
+            listener.stop()
+
+        progress(0.97, "Fetching the clip")
+        output = entry.get("outputs", {}).get("11", {})
+        items = output.get("images", []) or output.get("videos", []) or output.get("gifs", [])
+        if not items:
+            raise ProviderError("ComfyUI finished but saved no clip.")
+        destination = self._stamped_path(request.output_dir, "wan22", ".webm" if single_file
+                                         else ".mp4")
+        if single_file:
+            self._fetch(items[0], destination)
+        else:
+            self._assemble_frames(items, destination)
+
+        elapsed = time.time() - started
+        comfy_builtin.record_timing(quality, length, elapsed)
+        return GenerationResult(
+            files=[destination],
+            # The model animates the scene but barely moves the camera; the photo film
+            # reads this and adds the shot's own camera move when it conforms the clip.
+            raw={"camera": "static", "prompt_id": prompt_id, "size": [width, height],
+                 "frames": length, "fps": comfy_builtin.WAN22_FPS, "steps": steps},
+            provider=self.key, model_id=request.model_id, elapsed_seconds=elapsed,
+            cost_note="runs on this PC",
+        )
+
+    def _wait_for(self, prompt_id: str, should_cancel) -> dict:
+        deadline = time.time() + 3600
+        while time.time() < deadline:
+            if should_cancel and should_cancel():
+                # Interrupt only stops the prompt that is running; delete also removes it
+                # if it is still waiting in the queue.
+                for path, body in (("/interrupt", {}), ("/queue", {"delete": [prompt_id]})):
+                    try:
+                        request_json("POST", f"{self.base_url}{path}", json_body=body)
+                    except ProviderError:
+                        pass
+                raise ProviderError("Cancelled")
+            history = request_json("GET", f"{self.base_url}/history/{prompt_id}")
+            entry = history.get(prompt_id)
+            if entry:
+                status = entry.get("status", {})
+                if status.get("status_str") == "error":
+                    raise ProviderError(self._explain_error(status))
+                if entry.get("outputs"):
+                    return entry
+            time.sleep(1.5)
+        raise ProviderError("ComfyUI did not finish within an hour.")
+
+    @staticmethod
+    def _explain_error(status: dict) -> str:
+        detail = ""
+        for kind, data in status.get("messages", []):
+            if kind == "execution_error":
+                detail = f"{data.get('exception_type', '')}: {data.get('exception_message', '')}"
+        if "out of memory" in detail.lower() or "OutOfMemory" in detail:
+            return ("The GPU ran out of memory. Choose Draft quality or a shorter clip, or "
+                    f"close other GPU programs.\n\n{detail.strip()[:400]}")
+        return f"ComfyUI stopped with an error.\n\n{detail.strip()[:600] or 'See the ComfyUI console.'}"
+
+    def _fetch(self, item: dict, destination: Path) -> None:
+        from urllib.parse import urlencode
+        query = urlencode({"filename": item.get("filename", ""),
+                           "subfolder": item.get("subfolder", ""),
+                           "type": item.get("type", "output")})
+        download(f"{self.base_url}/view?{query}", destination)
+
+    def _assemble_frames(self, items: list[dict], destination: Path) -> None:
+        """Fallback for ComfyUI builds without SaveWEBM: frames in, one clip out."""
+        import shutil
+        import subprocess
+        import tempfile
+
+        from ..ffmpeg_tools import FfmpegLocator
+
+        locator = FfmpegLocator()
+        locator.require()
+        folder = Path(tempfile.mkdtemp(prefix="mediaforge_wan_"))
+        try:
+            for index, item in enumerate(items):
+                self._fetch(item, folder / f"frame_{index:05d}.png")
+            result = subprocess.run(
+                [locator.ffmpeg, "-y", "-v", "error", "-framerate",
+                 str(comfy_builtin.WAN22_FPS), "-i", str(folder / "frame_%05d.png"),
+                 "-c:v", "libx264", "-crf", "14", "-pix_fmt", "yuv420p", str(destination)],
+                capture_output=True, text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if result.returncode != 0:
+                raise ProviderError(f"Could not assemble the frames: {result.stderr[-400:]}")
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
