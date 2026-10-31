@@ -4,7 +4,7 @@ Everything here runs on the user's machine with no API key and no per-use cost. 
 install shapes are automated:
 
   ncnn-vulkan zips  self-contained .exe + models, any Vulkan GPU (AMD/Intel/NVIDIA)
-  pip packages      installed into the running interpreter
+  pip packages      installed into a separate engine Python (see enginepython.py)
 
 Nothing downloads until the user explicitly asks for it in the Model Hub.
 """
@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from . import enginepython
 from .catalog import load_local_tools
 from .config import app_data_dir
 from .providers.http import download
@@ -81,14 +82,7 @@ class LocalTool:
         if self.install_kind == "zip":
             return self.executable_path() is not None
         if self.install_kind == "pip":
-            module = self.install.get("module", "")
-            if not module:
-                return False
-            import importlib.util
-            try:
-                return importlib.util.find_spec(module) is not None
-            except (ImportError, ValueError, ModuleNotFoundError):
-                return False
+            return enginepython.module_installed(self.install.get("module", ""))
         return False  # 'manual' tools are never auto-detected
 
     @property
@@ -186,9 +180,12 @@ def _install_pip(tool: LocalTool, progress) -> str:
     package = tool.install.get("package", "")
     if not package:
         raise RuntimeError(f"{tool.name} has no pip package in the catalogue.")
+    python = enginepython.ensure_engine_python(progress)
     progress(0.1, f"pip install {package} (~{tool.size_mb} MB)")
+    # A catalogue entry may name several packages ("kokoro soundfile"); pip needs them as
+    # separate arguments, not one string with a space in it.
     process = subprocess.run(
-        [sys.executable, "-m", "pip", "install", package],
+        [python, "-m", "pip", "install", *package.split()],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         creationflags=_NO_WINDOW,
     )
@@ -521,7 +518,7 @@ def remove_background(
 ) -> Path:
     """rembg on a still, producing a transparent PNG."""
     progress(0.2, "Removing background")
-    argv = [sys.executable, "-m", "rembg", "i"]
+    argv = [_engine(), "-m", "rembg", "i"]
     if options.get("model"):
         argv += ["-m", str(options["model"])]
     if options.get("alpha_matting"):
@@ -537,44 +534,72 @@ def remove_background(
     return destination
 
 
+_TRANSCRIBE_SCRIPT = r"""
+import json, sys
+from faster_whisper import WhisperModel
+source, model_size, device, language = sys.argv[1:5]
+compute = "int8" if device == "cpu" else "float16"
+model = WhisperModel(model_size, device=device, compute_type=compute)
+segments, info = model.transcribe(source, language=language or None, vad_filter=True,
+                                  word_timestamps=True)
+print(json.dumps({"duration": float(getattr(info, "duration", 0) or 0)}), flush=True)
+for segment in segments:
+    print(json.dumps({"start": float(segment.start), "end": float(segment.end),
+                      "text": segment.text.strip()}), flush=True)
+"""
+
+
+def _engine() -> str:
+    python = enginepython.engine_python()
+    if python is None:
+        raise RuntimeError("This engine is not installed yet. Install it in the Model Hub.")
+    return python
+
+
 def transcribe(
     tool: LocalTool, source: Path, options: dict,
     progress=lambda f, m: None, cancel=None,
 ) -> list[dict]:
-    """faster-whisper -> [{'start', 'end', 'text'}] ready for write_srt."""
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError as error:
-        raise RuntimeError(
-            "faster-whisper is not installed. Install it in the Model Hub."
-        ) from error
+    """faster-whisper -> [{'start', 'end', 'text'}] ready for write_srt.
 
-    model_size = options.get("model", "base")
-    device = options.get("device", "auto")
+    Runs in the engine Python and streams one JSON object per segment, so progress is
+    real and a crash in the model costs this job rather than the window.
+    """
+    model_size = str(options.get("model", "base"))
+    device = str(options.get("device", "auto"))
     if device == "auto":
-        device = "cpu"  # CUDA needs matching cuDNN; CPU always works, int8 keeps it usable
-    compute_type = "int8" if device == "cpu" else "float16"
+        device = "cpu"  # CUDA needs a matching cuDNN; CPU always works, int8 keeps it usable
+    language = str(options.get("language") or "")
 
     progress(0.1, f"Loading Whisper '{model_size}' on {device}")
-    model = WhisperModel(model_size, device=device, compute_type=compute_type)
-
-    progress(0.25, "Transcribing")
-    language = options.get("language") or None
-    segments, info = model.transcribe(str(source), language=language, vad_filter=True,
-                                      word_timestamps=True)
-
+    process = subprocess.Popen(
+        [_engine(), "-c", _TRANSCRIBE_SCRIPT, str(source), model_size, device, language],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+        errors="replace", creationflags=_NO_WINDOW,
+    )
     collected: list[dict] = []
-    total = getattr(info, "duration", 0.0) or 0.0
-    for segment in segments:
+    total = 0.0
+    assert process.stdout is not None
+    for line in process.stdout:
         if cancel and cancel():
+            process.terminate()
             raise RuntimeError("Cancelled")
-        collected.append({
-            "start": float(segment.start), "end": float(segment.end),
-            "text": segment.text.strip(),
-        })
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if "duration" in record:
+            total = record["duration"]
+            progress(0.25, "Transcribing")
+            continue
+        collected.append(record)
         if total:
-            progress(min(0.95, 0.25 + 0.7 * segment.end / total),
-                     f"{segment.end:.0f}s / {total:.0f}s")
+            progress(min(0.95, 0.25 + 0.7 * record["end"] / total),
+                     f"{record['end']:.0f}s / {total:.0f}s")
+    process.wait()
+    if process.returncode != 0:
+        tail = (process.stderr.read() if process.stderr else "").strip().splitlines()[-12:]
+        raise RuntimeError("Whisper failed:\n" + "\n".join(tail))
     progress(1.0, f"{len(collected)} segments")
     return collected
 
@@ -585,7 +610,7 @@ def separate_audio(
 ) -> list[Path]:
     """Demucs stem separation."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    argv = [sys.executable, "-m", "demucs", "-o", str(output_dir),
+    argv = [_engine(), "-m", "demucs", "-o", str(output_dir),
             "-n", str(options.get("model", "htdemucs"))]
     stem = options.get("stem", "all")
     if stem and stem != "all":
@@ -601,35 +626,44 @@ def separate_audio(
     return produced
 
 
+_SPEAK_SCRIPT = r"""
+import sys
+import numpy, soundfile
+from kokoro import KPipeline
+text_path, destination, voice, speed = sys.argv[1:5]
+text = open(text_path, encoding="utf-8").read()
+pipeline = KPipeline(lang_code=voice[0] if voice else "a")
+chunks = [audio for _, _, audio in pipeline(text, voice=voice, speed=float(speed))]
+if not chunks:
+    sys.exit("Kokoro produced no audio.")
+soundfile.write(destination, numpy.concatenate(chunks), 24000)
+"""
+
+
 def speak(
     tool: LocalTool, text: str, destination: Path, options: dict,
     progress=lambda f, m: None, cancel=None,
 ) -> Path:
-    """Kokoro TTS -- free local voiceover."""
-    try:
-        import soundfile
-        from kokoro import KPipeline
-    except ImportError as error:
-        raise RuntimeError(
-            "Kokoro TTS needs `kokoro` and `soundfile`. Install Kokoro in the Model Hub, "
-            "then run: pip install soundfile"
-        ) from error
+    """Kokoro TTS -- local voiceover, run in the engine Python."""
+    import tempfile
 
-    progress(0.2, "Loading Kokoro")
-    voice = str(options.get("voice", "af_heart"))
-    pipeline = KPipeline(lang_code=voice[0] if voice else "a")
-
-    progress(0.4, "Synthesising")
-    chunks = []
-    for _, _, audio in pipeline(text, voice=voice, speed=float(options.get("speed", 1.0))):
-        if cancel and cancel():
-            raise RuntimeError("Cancelled")
-        chunks.append(audio)
-    if not chunks:
-        raise RuntimeError("Kokoro produced no audio.")
-
-    import numpy
     destination.parent.mkdir(parents=True, exist_ok=True)
-    soundfile.write(str(destination), numpy.concatenate(chunks), 24000)
+    voice = str(options.get("voice", "af_heart"))
+    speed = str(float(options.get("speed", 1.0)))
+    # The script reads the text from a file: a long narration on the command line hits
+    # Windows' 32k argument limit, and quoting arbitrary prose for a shell is a trap.
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
+                                     encoding="utf-8") as handle:
+        handle.write(text)
+        text_path = handle.name
+    try:
+        progress(0.2, "Loading Kokoro")
+        _run([_engine(), "-c", _SPEAK_SCRIPT, text_path, str(destination), voice, speed],
+             progress, "Kokoro", cancel)
+    finally:
+        Path(text_path).unlink(missing_ok=True)
+    if not destination.exists():
+        raise RuntimeError("Kokoro produced no audio file. If it says soundfile is "
+                           "missing, reinstall Kokoro from the Model Hub.")
     progress(1.0, "Done")
     return destination

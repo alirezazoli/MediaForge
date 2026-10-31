@@ -217,7 +217,7 @@
       "license": "Apache-2.0",
       "repo": "https://github.com/hexgrad/kokoro",
       "summary": "82M-parameter TTS. Runs fast on CPU, quality near paid services. Free voiceover.",
-      "install": {"kind": "pip", "package": "kokoro", "size_mb": 400, "module": "kokoro"},
+      "install": {"kind": "pip", "package": "kokoro soundfile", "size_mb": 400, "module": "kokoro"},
       "options": {
         "voice": {"type": "choice", "choices": ["af_heart", "af_bella", "am_michael", "bf_emma", "bm_george"], "default": "af_heart"},
         "speed": {"type": "float", "default": 1.0, "min": 0.5, "max": 2.0}

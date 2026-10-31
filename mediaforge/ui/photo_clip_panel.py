@@ -637,11 +637,12 @@ class PhotoClipPanel(QWidget):
                   f"Replicate key</a> (paid per clip)."
             )
             self.ai_banner.setOpenExternalLinks(False)
-            try:
-                self.ai_banner.linkActivated.disconnect()
-            except (TypeError, RuntimeError):
-                pass
-            self.ai_banner.linkActivated.connect(self._go_from_banner)
+            # The banner is refreshed on every model change; connecting each time would
+            # open the target page once per refresh, and disconnecting an unconnected
+            # signal makes Qt print a warning. So the link is wired once.
+            if not getattr(self, "_banner_links_wired", False):
+                self.ai_banner.linkActivated.connect(self._go_from_banner)
+                self._banner_links_wired = True
             self.ai_banner.setStyleSheet(
                 f"background:{theme.tint(theme.WARNING, 0.16)}; color:{theme.TEXT};"
                 f"border:1px solid {theme.tint(theme.WARNING, 0.45)}; border-radius:8px; padding:10px;"

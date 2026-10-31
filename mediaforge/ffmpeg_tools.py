@@ -95,7 +95,12 @@ def _well_known_locations(executable: str) -> list[Path]:
 
 
 class FfmpegLocator:
-    """Finds ffmpeg/ffprobe, preferring an explicit path, then PATH, then bundled tools."""
+    """Finds ffmpeg/ffprobe: explicit setting, then the bundled copy, then PATH.
+
+    The bundled copy outranks PATH on purpose. It is the build the app was tested
+    against; an older ffmpeg that happens to be on PATH can lack vidstab, drawtext or
+    loudnorm, and the failure would surface as a broken render rather than a clear error.
+    """
 
     def __init__(self, ffmpeg_hint: str = "", ffprobe_hint: str = "") -> None:
         self.ffmpeg = self._resolve("ffmpeg", ffmpeg_hint)
@@ -103,6 +108,8 @@ class FfmpegLocator:
 
     @staticmethod
     def _resolve(name: str, hint: str) -> str:
+        from .paths import bundled_ffmpeg_dir
+
         executable = name + (".exe" if sys.platform == "win32" else "")
 
         if hint:
@@ -112,13 +119,13 @@ class FfmpegLocator:
             if candidate.exists():
                 return str(candidate)
 
+        bundled = bundled_ffmpeg_dir() / executable
+        if bundled.exists():
+            return str(bundled)
+
         found = shutil.which(name)
         if found:
             return found
-
-        bundled = Path(__file__).resolve().parent.parent / "bin" / executable
-        if bundled.exists():
-            return str(bundled)
 
         for candidate in _well_known_locations(executable):
             if candidate.exists():

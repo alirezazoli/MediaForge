@@ -1,31 +1,43 @@
 """Entry point.
 
-    python -m mediaforge            launch the GUI
-    python -m mediaforge --doctor   print an environment report and exit
+    MediaForge.exe / python -m mediaforge     launch the GUI
+    --doctor                                  print an environment report and exit
+    --selftest [--report PATH]                run the end-to-end checks, exit code = failures
+    --version                                 print the version and exit
 """
 
 from __future__ import annotations
 
+import logging
 import sys
+from pathlib import Path
+
+from .paths import APP_NAME, __version__
+
+log = logging.getLogger("mediaforge")
 
 
 def doctor() -> int:
     from .config import Credentials, Settings, app_data_dir
     from .ffmpeg_tools import FfmpegLocator
     from .providers import build_registry
+    from .runtime import log_file
 
     settings = Settings.load()
     credentials = Credentials()
     locator = FfmpegLocator(settings.ffmpeg_path, settings.ffprobe_path)
     registry = build_registry(credentials, settings)
 
-    print("MediaForge Studio -- environment report")
+    print(f"{APP_NAME} {__version__} -- environment report")
     print("=" * 60)
     print(f"Python        : {sys.version.split()[0]}")
     print(f"Config folder : {app_data_dir()}")
+    print(f"Log file      : {log_file()}")
     print(f"Workspace     : {settings.workspace}")
     print(f"ffmpeg        : {locator.version() if locator.available else 'NOT FOUND'}")
-    if not locator.available:
+    if locator.available:
+        print(f"                {locator.ffmpeg}")
+    else:
         print("                Install with: winget install Gyan.FFmpeg")
 
     try:
@@ -48,27 +60,73 @@ def doctor() -> int:
     return 0
 
 
+def _option_value(flag: str) -> str | None:
+    if flag in sys.argv:
+        index = sys.argv.index(flag)
+        if index + 1 < len(sys.argv):
+            return sys.argv[index + 1]
+    return None
+
+
 def main() -> int:
+    if any(flag in sys.argv for flag in ("--version", "--doctor", "--selftest")):
+        from .runtime import prepare_console
+        prepare_console()
+    if "--version" in sys.argv:
+        print(f"{APP_NAME} {__version__}")
+        return 0
     if "--doctor" in sys.argv:
         return doctor()
+    if "--selftest" in sys.argv:
+        from . import selftest
+        report = _option_value("--report")
+        return selftest.run(Path(report) if report else None)
 
     try:
+        from PySide6.QtGui import QIcon
         from PySide6.QtWidgets import QApplication
     except ImportError:
         print("PySide6 is required. Install it with:\n\n    pip install PySide6\n")
         return 1
 
+    from . import runtime
+    from .paths import icon_path
+
+    runtime.configure_logging()
+    runtime.install_crash_hooks()
+    runtime.set_windows_app_id()
+
+    application = QApplication(sys.argv)
+    application.setApplicationName(APP_NAME)
+    application.setApplicationVersion(__version__)
+    application.setOrganizationName("MediaForge")
+    icon = icon_path()
+    if icon.exists():
+        application.setWindowIcon(QIcon(str(icon)))
+
+    instance = runtime.SingleInstance()
+    if not instance.is_primary:
+        log.info("Another instance is running; handed over to it.")
+        return 0
+
     from .context import AppContext
     from .ui.main_window import MainWindow
 
-    application = QApplication(sys.argv)
-    application.setApplicationName("MediaForge Studio")
-    application.setOrganizationName("MediaForge")
-
     context = AppContext()
     window = MainWindow(context)
+
+    def bring_to_front() -> None:
+        if window.isMinimized():
+            window.showNormal()
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    instance.on_activate = bring_to_front
     window.show()
-    return application.exec()
+    exit_code = application.exec()
+    log.info("Exited with code %s", exit_code)
+    return exit_code
 
 
 if __name__ == "__main__":
