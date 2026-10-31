@@ -148,6 +148,9 @@ class Sidebar(QWidget):
     def __init__(self, order: list[str] | None = None, mode: str = "dark") -> None:
         super().__init__()
         self.setObjectName("sidebar")
+        # A QWidget subclass ignores a stylesheet background unless told to paint it;
+        # without this the drawer was never filled and showed black on screen.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.expanded_width = EXPANDED_WIDTH
         self.collapsed = False
         self.setFixedWidth(self.expanded_width)

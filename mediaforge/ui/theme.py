@@ -239,8 +239,11 @@ def _template(p: dict[str, str]) -> str:
     color: {p['onSurface']};
 }}
 
-QMainWindow, QDialog {{ background: {p['surface']}; }}
+/* Order matters: Qt breaks a specificity tie by position, not by class depth, so with
+   the QWidget rule second, "transparent" also won for the main window -- and an unpainted
+   window shows as solid black on screen. */
 QWidget {{ background: transparent; }}
+QMainWindow, QDialog {{ background: {p['surface']}; }}
 QToolTip {{
     background: {p['inverseSurface']}; color: {p['inverseOnSurface']};
     border: none; border-radius: {SHAPE_XS}px; padding: 6px 8px; font-size: 12px;
