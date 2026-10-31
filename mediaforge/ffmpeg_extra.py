@@ -11,7 +11,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Sequence
 
 from .ffmpeg_tools import FfmpegCommand, FfmpegLocator, _NO_WINDOW
 

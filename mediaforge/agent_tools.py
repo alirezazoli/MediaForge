@@ -8,7 +8,6 @@ prose, and because the UI shows the same output to the user.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from . import atmosphere as atmo
 from . import autopilot, availability, musicsearch, repair, sceneanalysis

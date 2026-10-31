@@ -38,7 +38,7 @@ GLYPHS: dict[str, str] = {
     "warning": "", "wand": "", "measure": "", "cut": "",
     "crop": "", "sound": "", "mute": "", "eye": "",
     "compare": "", "sparkle": "", "film": "", "image": "",
-    # editing tools, written as escapes so they can be checked against the font
+    # editing tools (codepoints checked against SegoeIcons.ttf by rendering a sheet)
     "trim": "", "silence": "", "scenes": "", "speed": "",
     "reverse": "", "loop": "", "fade": "", "phone": "",
     "rotate": "", "convert": "", "palette": "", "layers": "",
@@ -49,6 +49,7 @@ GLYPHS: dict[str, str] = {
     "frames": "", "grid": "", "wave": "", "gif": "",
     "export": "", "video": "", "sliders": "", "chat": "",
     "list": "", "stopwatch": "", "monitor": "",
+    "box": "", "box-checked": "",
 }
 
 

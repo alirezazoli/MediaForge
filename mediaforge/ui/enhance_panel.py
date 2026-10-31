@@ -7,17 +7,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea,
-    QSplitter, QTextEdit, QVBoxLayout, QWidget,
+    QComboBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QTextEdit,
+    QVBoxLayout, QWidget,
 )
 
 from .. import ffmpeg_tools, localai
 from ..context import AppContext
 from ..project import Asset
 from .stepper import Step, StepFlow
-from .widgets import ResponsiveSplitter, Card, MediaPreview, OptionsForm
+from .widgets import Card, MediaPreview, OptionsForm
 from . import theme
 
 # (label, tool id, capability key)

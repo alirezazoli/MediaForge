@@ -158,7 +158,6 @@ def decorate_combo(combo, entries: list[tuple[str, Any, Availability]]) -> int:
     so callers can land the selection somewhere that actually works.
     """
     from PySide6.QtGui import QBrush, QColor
-    from PySide6.QtCore import Qt
 
     from .ui import theme
 

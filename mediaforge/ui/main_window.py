@@ -320,6 +320,7 @@ class MainWindow(QMainWindow):
             self._set_status(f"{job.title}: {job.message}")
             return
         if job.category == "batch_scan":
+            self.batch_panel.on_job_update(job)
             if job.state == JobState.DONE and job.result is not None:
                 self.batch_panel.show_scan(job.result)
             elif job.state == JobState.FAILED:
@@ -327,6 +328,7 @@ class MainWindow(QMainWindow):
             self._set_status(f"{job.title}: {job.message}")
             return
         if job.category == "batch_repair":
+            self.batch_panel.on_job_update(job)
             # A cancelled batch still finished real files; its outcome is a result, not
             # an error, and the panel has to show which rows survived.
             if job.state in (JobState.DONE, JobState.CANCELLED) and job.result is not None:
@@ -352,6 +354,12 @@ class MainWindow(QMainWindow):
                 # says where it is -- showing it beats hiding it in the Jobs list.
                 QMessageBox.warning(self, "Repair did not finish", job.error[:800])
             self._set_status(f"{job.title}: {job.message}")
+            return
+        if job.category == "director" and self.director_panel.on_job_update(job):
+            if job.state == JobState.DONE:
+                self._refresh_library()
+                self.timeline_panel.refresh()
+            self._set_status(f"{job.title}: {job.message or job.state.value}")
             return
         if job.category == "generate" and self.generate_panel.on_job_update(job):
             if job.state == JobState.DONE:

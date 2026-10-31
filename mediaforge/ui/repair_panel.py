@@ -19,9 +19,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSpinBox,
-    QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QTextEdit, QVBoxLayout,
-    QWidget,
+    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QSpinBox, QTableWidget,
+    QTableWidgetItem, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from .. import diagnose, ffmpeg_tools, gpu as gpu_module, localai, repair
@@ -29,7 +28,7 @@ from ..context import AppContext
 from ..project import Asset
 from .compare import ComparePanel
 from .stepper import Step, StepFlow
-from .widgets import ResponsiveSplitter, Card, MediaPreview
+from .widgets import Card, MediaPreview
 from . import theme
 
 DENOISE_CHOICES = [

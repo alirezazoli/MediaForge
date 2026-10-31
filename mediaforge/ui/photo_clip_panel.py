@@ -13,7 +13,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-    QFormLayout, QSizePolicy, QSlider, QSpinBox, QSplitter, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QFormLayout, QSlider, QSpinBox, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from .. import atmosphere as atmo
@@ -28,7 +28,7 @@ from ..providers import Capability, GenerationRequest
 from . import theme
 from .shot_inspector import ShotInspector
 from .stepper import Step, StepFlow
-from .widgets import ResponsiveSplitter, Card, MediaPreview
+from .widgets import Card, MediaPreview
 
 PHOTO_FILTER = "Photos (" + " ".join(f"*{s}" for s in sorted(IMAGE_SUFFIXES)) + ");;All files (*.*)"
 

@@ -8,20 +8,22 @@ including, per row, why a particular file failed while the rest went through.
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QSpinBox, QTableWidget,
-    QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QSizePolicy, QSpinBox,
+    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from .. import batchrepair, gpu as gpu_module, repair
 from ..batchrepair import BatchItem, ItemState
 from ..context import AppContext
-from .widgets import Card
-from . import theme
+from .stepper import Step, StepFlow
+from .widgets import Card, JobStatusCard, centred_page
+from . import icons, theme
 
 COLUMNS = ["Do", "File", "What was measured", "What will happen"]
 
@@ -48,48 +50,117 @@ class BatchPanel(QWidget):
 
     # -- construction --------------------------------------------------------------------
     def _build(self) -> None:
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.flow = StepFlow([
+            Step("folder", "Folder", "Choose the folder of videos."),
+            Step("analyse", "Analyse", "Measure every file, then tick the ones to fix."),
+            Step("fix", "Fix", "Per-file decisions, or one set of settings for all."),
+            Step("repair", "Repair", "Run it and see what happened to each file."),
+        ], finish_label="Repair files")
 
+        # ---- step 1: the folder -------------------------------------------------------
+        folder_page = QWidget()
+        layout = QVBoxLayout(folder_page)
+        layout.setSpacing(theme.SPACE_3)
         banner = QLabel(
-            "Repair a whole folder in one go. Every file is measured on its own, because "
-            "noise and dead air differ from clip to clip. <b>Originals are never "
-            "modified</b> — results are written to the project's renders folder."
+            "Every file is measured on its own, because noise and dead air differ from clip "
+            "to clip. <b>Originals are never modified</b> — results go to the project's "
+            "renders folder."
         )
+        banner.setObjectName("subtle")
         banner.setWordWrap(True)
         layout.addWidget(banner)
-
-        # -- folder ------------------------------------------------------------------
-        source_card = Card("1 · Folder")
+        source_card = Card("Folder")
+        row = QHBoxLayout()
         self.folder_label = QLabel("No folder chosen.")
         self.folder_label.setWordWrap(True)
-        source_card.body.addWidget(self.folder_label)
-        row = QHBoxLayout()
-        pick = QPushButton("Choose a folder…")
+        row.addWidget(self.folder_label, 1)
+        pick = QPushButton("Choose folder")
+        pick.setObjectName("tonal")
+        icons.button(pick, "folder", "@ACCENT")
         pick.clicked.connect(self._pick_folder)
+        row.addWidget(pick, 0, Qt.AlignmentFlag.AlignTop)
+        source_card.body.addLayout(row)
         self.recursive_box = QCheckBox("Include sub-folders")
         self.recursive_box.setChecked(True)
         self.recursive_box.toggled.connect(self._reload_folder)
-        row.addWidget(pick)
-        row.addWidget(self.recursive_box)
-        row.addStretch(1)
-        source_card.body.addLayout(row)
+        source_card.body.addWidget(self.recursive_box)
         layout.addWidget(source_card)
+        layout.addStretch(1)
+        self.flow.add_page(centred_page(folder_page, 860))
 
-        # -- settings ----------------------------------------------------------------
-        settings_card = Card("2 · Settings")
+        # ---- the files table, shown on Analyse and again on Repair --------------------
+        self.table_card = Card("Files")
+        button_row = QHBoxLayout()
+        button_row.setSpacing(theme.SPACE_2)
+        for glyph, tip, value in (("box-checked", "Tick all", True), ("box", "Untick all", False)):
+            button = QPushButton()
+            button.setObjectName("iconButton")
+            button.setToolTip(tip)
+            icons.button(button, glyph)
+            button.clicked.connect(lambda _=False, v=value: self._set_all(v))
+            button_row.addWidget(button)
+        self.tally = QLabel("")
+        self.tally.setObjectName("subtle")
+        button_row.addWidget(self.tally)
+        button_row.addStretch(1)
+        self.table_card.body.addLayout(button_row)
+        self.table = QTableWidget(0, len(COLUMNS))
+        self.table.setHorizontalHeaderLabels(COLUMNS)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setMinimumHeight(240)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.table.itemChanged.connect(lambda _item: self._update_tally())
+        self.table_card.body.addWidget(self.table)
+        self.table_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+
+        # ---- step 2: measure ----------------------------------------------------------
+        analyse_page = QWidget()
+        self.analyse_layout = QVBoxLayout(analyse_page)
+        self.analyse_layout.setSpacing(theme.SPACE_3)
+        scan_card = Card("Analyse")
+        scan_row = QHBoxLayout()
+        scan_form = QFormLayout()
+        self.silence_box = QSpinBox()
+        self.silence_box.setRange(-90, -10)
+        self.silence_box.setValue(repair.SILENCE_DB)
+        self.silence_box.setSuffix(" dB")
+        self.silence_box.setToolTip("Anything quieter than this counts as silence.")
+        scan_form.addRow("Silence below", self.silence_box)
+        scan_row.addLayout(scan_form)
+        scan_row.addStretch(1)
+        self.scan_button = QPushButton("Analyse every file")
+        self.scan_button.setObjectName("primary")
+        icons.button(self.scan_button, "measure", "#ffffff")
+        self.scan_button.clicked.connect(self.scan)
+        scan_row.addWidget(self.scan_button)
+        scan_card.body.addLayout(scan_row)
+        self.scan_card = JobStatusCard("Progress")
+        self.scan_card.cancel_requested.connect(self.context.jobs.cancel)
+        self.scan_card.hide()
+        self.analyse_layout.addWidget(scan_card)
+        self.analyse_layout.addWidget(self.scan_card)
+        self.flow.add_page(centred_page(analyse_page, 1080))
+
+        # ---- step 3: decide -----------------------------------------------------------
+        fix_page = QWidget()
+        layout = QVBoxLayout(fix_page)
+        layout.setSpacing(theme.SPACE_3)
+        settings_card = Card("Settings")
         form = QFormLayout()
+        form.setHorizontalSpacing(theme.SPACE_4)
         self.mode_box = QComboBox()
         self.mode_box.addItem("Decide per file from its own measurements", "auto")
         self.mode_box.addItem("Use the same settings for every file", "shared")
         self.mode_box.currentIndexChanged.connect(self._sync_controls)
         form.addRow("How to treat them", self.mode_box)
-
-        self.silence_box = QSpinBox()
-        self.silence_box.setRange(-90, -10)
-        self.silence_box.setValue(repair.SILENCE_DB)
-        self.silence_box.setSuffix(" dB")
-        form.addRow("Silence below", self.silence_box)
-
         self.denoise_box = QComboBox()
         self.denoise_box.addItems([repair.DENOISE_NONE, repair.DENOISE_FAST,
                                    repair.DENOISE_BEST, repair.DENOISE_TEMPORAL])
@@ -110,52 +181,46 @@ class BatchPanel(QWidget):
         self.scale_box.addItems([f"x{value}" for value in repair.AI_SCALES])
         form.addRow("Scale", self.scale_box)
         settings_card.body.addLayout(form)
-
         self.settings_note = QLabel("")
+        self.settings_note.setObjectName("subtle")
         self.settings_note.setWordWrap(True)
         settings_card.body.addWidget(self.settings_note)
         layout.addWidget(settings_card)
+        layout.addStretch(1)
+        self.flow.add_page(centred_page(fix_page, 820))
 
-        # -- table -------------------------------------------------------------------
-        table_card = Card("3 · Files")
-        button_row = QHBoxLayout()
-        self.scan_button = QPushButton("Analyse every file")
-        self.scan_button.setObjectName("primary")
-        self.scan_button.clicked.connect(self.scan)
-        self.run_button = QPushButton("Repair the ticked files")
-        self.run_button.setObjectName("primary")
-        self.run_button.clicked.connect(self.run)
-        for label, value in (("Tick all", True), ("Untick all", False)):
-            button = QPushButton(label)
-            button.setObjectName("ghost")
-            button.clicked.connect(lambda _=False, v=value: self._set_all(v))
-            button_row.addWidget(button)
-        button_row.addWidget(self.scan_button)
-        button_row.addWidget(self.run_button)
-        button_row.addStretch(1)
-        self.tally = QLabel("")
-        button_row.addWidget(self.tally)
-        table_card.body.addLayout(button_row)
-
-        self.table = QTableWidget(0, len(COLUMNS))
-        self.table.setHorizontalHeaderLabels(COLUMNS)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.table.itemChanged.connect(lambda _item: self._update_tally())
-        table_card.body.addWidget(self.table)
-        layout.addWidget(table_card, 1)
-
+        # ---- step 4: run and report ---------------------------------------------------
+        repair_page = QWidget()
+        self.repair_layout = QVBoxLayout(repair_page)
+        self.repair_layout.setSpacing(theme.SPACE_3)
+        self.repair_card = JobStatusCard("Progress")
+        self.repair_card.cancel_requested.connect(self.context.jobs.cancel)
+        self.repair_layout.addWidget(self.repair_card)
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(110)
+        self.log.setMaximumHeight(120)
         self.log.setPlaceholderText("Results appear here, one line per file.")
-        layout.addWidget(self.log)
+        self.repair_layout.addWidget(self.log)
+        self.flow.add_page(centred_page(repair_page, 1080))
+        # The bar's primary button is the run button; the old name keeps the rest working.
+        self.run_button = self.flow.next_button
+
+        outer.addWidget(self.flow, 1)
+        self.flow.step_changed.connect(self._step_changed)
+        self.flow.finished.connect(self.run)
+        self.flow.go_to(0)
+
+    def _step_changed(self, index: int) -> None:
+        # The table is one widget; it moves to whichever step is showing files.
+        if index == 1:
+            self.analyse_layout.addWidget(self.table_card, 1)
+        elif index == 3:
+            self.repair_layout.insertWidget(1, self.table_card, 1)
+        self._sync_controls()
+
+    def on_job_update(self, job) -> None:
+        """Progress for the scan or the repair, shown on the step that started it."""
+        self.scan_card.show_job(job) or self.repair_card.show_job(job)
 
     # -- folder --------------------------------------------------------------------------
     def _pick_folder(self) -> None:
@@ -243,8 +308,17 @@ class BatchPanel(QWidget):
         self.scale_box.setEnabled(wants_upscale)
 
         scanned = [item for item in self.items if item.report is not None]
-        self.scan_button.setEnabled(bool(self.items))
-        self.run_button.setEnabled(bool(scanned) and bool(self.ticked_items()))
+        scanning = self.scan_card.bar.isVisible()
+        self.scan_button.setEnabled(bool(self.items) and not scanning)
+        step = self.flow.current() if hasattr(self, "flow") else 0
+        ready = {0: bool(self.items), 1: bool(scanned) and not scanning, 2: bool(scanned),
+                 3: bool(scanned) and bool(self.ticked_items())
+                 and not self.repair_card.bar.isVisible()}
+        self.flow.set_next_enabled(ready.get(step, True))
+        self.flow.set_status({
+            0: "" if self.items else "Choose a folder with videos in it.",
+            1: "" if scanned else "Analyse the files to see what each one needs.",
+        }.get(step, ""))
 
         tool_id = repair.installed_upscaler(self.context.local_tools)
         if self.model_box.count() == 0 and tool_id:
@@ -309,7 +383,6 @@ class BatchPanel(QWidget):
         silence_db = self.silence_box.value()
         tool_id = repair.installed_upscaler(self.context.local_tools)
         self.scan_button.setEnabled(False)
-        self.log.setPlainText("Analysing…")
 
         def work(job_context):
             return batchrepair.scan_all(
@@ -321,6 +394,9 @@ class BatchPanel(QWidget):
 
         job = self.context.jobs.submit(f"Analyse {len(paths)} video(s)", work,
                                        category="batch_scan")
+        self.scan_card.show()
+        self.scan_card.track(job.id, f"Measuring <b>{len(paths)}</b> file(s)")
+        self._sync_controls()
         self.status.emit(f"Job {job.id}: analysing {len(paths)} file(s)")
 
     def show_scan(self, outcome: batchrepair.BatchOutcome) -> None:
@@ -339,13 +415,14 @@ class BatchPanel(QWidget):
         if nothing:
             lines.append(f"{len(nothing)} file(s) are already clean and will be skipped "
                          f"rather than re-encoded.")
-        self.log.setPlainText("\n".join(lines))
+        self.scan_card.summary.setText("<br>".join(html.escape(line) for line in lines))
         self._sync_controls()
         self.status.emit(f"Analysed {len(outcome.items)} file(s)")
 
     def scan_failed(self, error: str) -> None:
         self.scan_button.setEnabled(True)
-        self.log.setPlainText(f"Could not analyse the folder: {error.splitlines()[0][:200]}")
+        self.scan_card.summary.setText(
+            "Could not analyse the folder: " + html.escape(error.splitlines()[0][:200]))
 
     def run(self) -> None:
         if self.context.project is None:
@@ -419,7 +496,10 @@ class BatchPanel(QWidget):
 
         job = self.context.jobs.submit(f"Repair {len(items)} video(s)", work,
                                        category="batch_repair")
-        self.run_button.setEnabled(False)
+        self.flow.go_to(3)
+        self.repair_card.track(job.id, f"Repairing <b>{len(items)}</b> file(s)")
+        self.log.clear()
+        self._sync_controls()
         self.status.emit(f"Job {job.id}: repairing {len(items)} file(s)")
 
     def show_results(self, outcome: batchrepair.BatchOutcome) -> None:

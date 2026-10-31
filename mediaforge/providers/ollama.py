@@ -7,7 +7,6 @@ what the agent needs; models that do not are still usable for plain conversation
 
 from __future__ import annotations
 
-import json
 import shutil
 import socket
 import subprocess
@@ -18,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .base import (
-    Capability, GenerationRequest, GenerationResult, ModelSpec, Provider, ProviderError,
+    Capability, GenerationResult, ModelSpec, Provider, ProviderError,
 )
 from .http import request_json
 
@@ -95,7 +94,7 @@ class OllamaModel:
 
 class OllamaProvider(Provider):
     key = "ollama"
-    name = "Ollama (local models, free)"
+    name = "Ollama (local models)"
     homepage = "https://ollama.com/download"
     credential_slot = ""
     credential_help = (

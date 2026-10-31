@@ -19,7 +19,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtCore import QRect, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QSizePolicy, QSlider, QVBoxLayout, QWidget,

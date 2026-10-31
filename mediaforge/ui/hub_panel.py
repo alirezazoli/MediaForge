@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices

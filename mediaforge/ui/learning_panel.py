@@ -19,8 +19,6 @@ from PySide6.QtWidgets import (
 
 from ..context import AppContext
 from ..learning import MIN_OBSERVATIONS, MIN_SHARE
-from . import theme
-from .widgets import Card
 
 COLUMNS = ["Setting", "Scene", "Your habit", "Agreement", "Times seen", "Status"]
 

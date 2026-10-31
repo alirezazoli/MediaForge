@@ -192,7 +192,7 @@ class GeneratePanel(QWidget):
         clear_refs = QPushButton()
         clear_refs.setObjectName("iconButton")
         clear_refs.setToolTip("Remove all reference files")
-        icons.button(clear_refs, "clear")
+        icons.button(clear_refs, "close")
         clear_refs.clicked.connect(self._clear_references)
         reference_row.addWidget(clear_refs)
         self.reference_card.body.addLayout(reference_row)

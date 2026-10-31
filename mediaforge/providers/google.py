@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .base import (
     Capability, GenerationRequest, GenerationResult, ModelSpec, Provider, ProviderError,
@@ -349,7 +349,7 @@ class GoogleProvider(Provider):
         if _requests is None:  # pragma: no cover
             raise ProviderError("Video upload needs the `requests` package installed.")
         response = _requests.post(
-            f"https://generativelanguage.googleapis.com/upload/v1beta/files",
+            "https://generativelanguage.googleapis.com/upload/v1beta/files",
             headers={
                 "x-goog-api-key": self.api_key,
                 "X-Goog-Upload-Protocol": "raw",

@@ -191,7 +191,7 @@ def _install_pip(tool: LocalTool, progress) -> str:
     )
     if process.returncode != 0:
         tail = (process.stderr or process.stdout).strip().splitlines()[-15:]
-        raise RuntimeError(f"pip install failed:\n" + "\n".join(tail))
+        raise RuntimeError("pip install failed:\n" + "\n".join(tail))
     progress(1.0, "Installed")
     return package
 

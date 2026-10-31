@@ -16,7 +16,7 @@ import threading
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, Sequence
+from typing import Callable, Iterable, Sequence
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 

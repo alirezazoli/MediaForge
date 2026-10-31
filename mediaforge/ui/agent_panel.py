@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -338,7 +337,7 @@ class AgentPanel(QWidget):
     def _confirm(self, tool: Tool, arguments: dict) -> bool:
         """Called from the worker thread; Qt dialogs need the UI thread, so this is
         marshalled by blocking on a queued call."""
-        from PySide6.QtCore import QMetaObject, Qt as QtCore_Qt, Q_ARG, Q_RETURN_ARG
+        from PySide6.QtCore import QMetaObject, Qt as QtCore_Qt
 
         # Simpler and safe: build the text here, ask on the UI thread via invokeMethod.
         detail = ", ".join(f"{key}={value}" for key, value in arguments.items())

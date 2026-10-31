@@ -6,9 +6,8 @@ why, so choosing to override is an informed decision rather than a guess.
 
 from __future__ import annotations
 
-from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QTextEdit, QVBoxLayout, QWidget,
@@ -18,7 +17,6 @@ from .. import atmosphere as atmo
 from .. import availability, sceneanalysis
 from ..photofilm import ALL_MOVES, STYLE_HELP, Shot, TRANSFORM_HELP, TRANSFORMS
 from ..providers import Capability
-from . import theme
 from .widgets import Card
 
 

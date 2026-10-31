@@ -23,11 +23,10 @@ measuring, and each of them has a trap in it:
 
 from __future__ import annotations
 
-import math
 import re
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 

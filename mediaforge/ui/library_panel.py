@@ -8,7 +8,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QSplitter, QVBoxLayout, QWidget,
+    QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..context import AppContext
