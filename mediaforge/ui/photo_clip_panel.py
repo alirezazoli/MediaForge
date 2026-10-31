@@ -25,7 +25,7 @@ from ..photofilm import (
     ALL_MOVES, ASPECTS, FIT_MODES, PhotoFilmSettings, Shot, TRANSFORMS,
 )
 from ..providers import Capability, GenerationRequest
-from . import theme
+from . import icons, theme
 from .shot_inspector import ShotInspector
 from .stepper import Step, StepFlow
 from .widgets import Card, MediaPreview
@@ -213,15 +213,15 @@ class PhotoClipPanel(QWidget):
         left_layout.addWidget(self.empty_hint)
 
         row = QHBoxLayout()
-        for label, handler, style in (
-            ("Add photos", self.add_photos, ""),
-            ("Add folder", self.add_folder, ""),
-            ("Remove", self.strip.remove_selected, "ghost"),
-            ("Clear", self.strip.clear_all, "ghost"),
+        for label, handler, style, glyph in (
+            ("Add photos", self.add_photos, "tonal", "add"),
+            ("Add folder", self.add_folder, "tonal", "folder"),
+            ("Remove", self.strip.remove_selected, "ghost", "remove"),
+            ("Clear", self.strip.clear_all, "ghost", "close"),
         ):
             button = QPushButton(label)
-            if style:
-                button.setObjectName(style)
+            button.setObjectName(style)
+            icons.button(button, glyph, "@ACCENT")
             button.clicked.connect(handler)
             row.addWidget(button)
         row.addStretch(1)
