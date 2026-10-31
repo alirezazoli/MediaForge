@@ -172,6 +172,14 @@ class SingleInstance:
         probe = QLocalSocket()
         probe.connectToServer(_SERVER_NAME)
         if probe.waitForConnected(300):
+            # Windows only lets the process the user just launched take the foreground;
+            # without this grant the running window would merely flash in the taskbar.
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    ctypes.windll.user32.AllowSetForegroundWindow(-1)    # ASFW_ANY
+                except (AttributeError, OSError):
+                    pass
             probe.write(b"activate")
             probe.waitForBytesWritten(300)
             probe.disconnectFromServer()
@@ -187,8 +195,12 @@ class SingleInstance:
                         self._server.errorString())
 
     def _on_connection(self) -> None:
+        # The connection itself is the request. Waiting for readyRead misses it: the few
+        # bytes the second launch sends usually arrive before the handler is connected,
+        # and readyRead does not fire again for data already buffered.
         if self._server is None:
             return
-        connection = self._server.nextPendingConnection()
-        if connection is not None:
-            connection.readyRead.connect(lambda: (connection.readAll(), self.on_activate()))
+        while (connection := self._server.nextPendingConnection()) is not None:
+            connection.disconnected.connect(connection.deleteLater)
+            connection.close()
+            self.on_activate()
