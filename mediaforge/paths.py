@@ -45,9 +45,14 @@ def bundled_ffmpeg_dir() -> Path:
     return install_dir() / "ffmpeg"
 
 
-def icon_path() -> Path:
-    for candidate in (resource_dir() / "mediaforge" / "assets" / "mediaforge.ico",
-                      Path(__file__).resolve().parent / "assets" / "mediaforge.ico"):
+def asset_path(name: str) -> Path:
+    """A file from mediaforge/assets, or an empty Path if the build left it out."""
+    for candidate in (resource_dir() / "mediaforge" / "assets" / name,
+                      Path(__file__).resolve().parent / "assets" / name):
         if candidate.exists():
             return candidate
     return Path()
+
+
+def icon_path() -> Path:
+    return asset_path("mediaforge.ico")

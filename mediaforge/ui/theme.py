@@ -17,6 +17,11 @@ panels that use them keep working; each now resolves to the matching M3 role.
 
 from __future__ import annotations
 
+from ..paths import asset_path
+
+# Qt stylesheets take forward slashes in url(), on Windows too.
+_CHECK_IMAGE = asset_path("check.png").as_posix() if asset_path("check.png").name else ""
+
 # ======================================================================================
 # Tonal palettes -- Google blue, Google neutral
 # ======================================================================================
@@ -342,6 +347,22 @@ QLabel#brand {{
     color: {p['onSurface']}; padding: 2px 4px 2px 8px;
 }}
 
+/* --------------------------------------------------------------------- tiles ---- */
+/* A choice among many: tonal at rest, outlined in the accent when chosen -- the same
+   language as the navigation drawer, so "this one is selected" reads the same everywhere. */
+QToolButton#tile {{
+    background: {p['surfaceContainerLow']};
+    border: 1px solid {p['surfaceContainerLow']}; border-radius: {SHAPE_SM}px;
+    padding: 6px 12px; min-height: {SIZE_CONTROL}px;
+    font-size: 13px; font-weight: 500; color: {p['onSurface']}; text-align: left;
+}}
+QToolButton#tile:hover {{ background: {p['surfaceContainerHigh']};
+                          border-color: {p['surfaceContainerHigh']}; }}
+QToolButton#tile:checked {{
+    background: {p['secondaryContainer']}; color: {p['onSecondaryContainer']};
+    border: 1px solid {p['primary']}; font-weight: 600;
+}}
+
 /* ------------------------------------------------------------------- stepper ---- */
 /* A step is a number and a name. Current is a filled pill, finished is tinted, ahead is
    quiet -- so where you are and how far you have to go are both readable at a glance. */
@@ -406,7 +427,9 @@ QCheckBox::indicator {{
     border: 2px solid {p['onSurfaceVariant']}; border-radius: {SHAPE_XS}px;
     background: transparent;
 }}
-QCheckBox::indicator:checked {{ background: {p['primary']}; border-color: {p['primary']}; }}
+QCheckBox::indicator:checked {{
+    background: {p['primary']}; border-color: {p['primary']}; image: url({_CHECK_IMAGE});
+}}
 QRadioButton::indicator {{ border: 2px solid {p['onSurfaceVariant']}; border-radius: 9px; }}
 QRadioButton::indicator:checked {{
     border: 5px solid {p['primary']}; background: {p['surfaceContainerLowest']};

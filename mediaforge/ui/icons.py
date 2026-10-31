@@ -38,7 +38,29 @@ GLYPHS: dict[str, str] = {
     "warning": "", "wand": "", "measure": "", "cut": "",
     "crop": "", "sound": "", "mute": "", "eye": "",
     "compare": "", "sparkle": "", "film": "", "image": "",
+    # editing tools, written as escapes so they can be checked against the font
+    "trim": "", "silence": "", "scenes": "", "speed": "",
+    "reverse": "", "loop": "", "fade": "", "phone": "",
+    "rotate": "", "convert": "", "palette": "", "layers": "",
+    "sharpen": "", "deband": "", "lines": "", "hdr": "",
+    "camera": "", "stamp": "", "text": "", "pip": "",
+    "split": "", "key": "", "blur": "", "captions": "",
+    "volume": "", "mic": "", "headphones": "", "photo": "",
+    "frames": "", "grid": "", "wave": "", "gif": "",
+    "export": "", "video": "", "sliders": "", "chat": "",
+    "list": "", "stopwatch": "", "monitor": "",
 }
+
+
+def _resolve_colour(colour: str | None) -> str:
+    """A colour, or `@TOKEN` naming a theme token read at paint time.
+
+    A token rather than its value, so an icon tinted with the accent picks up the new
+    accent when the theme switches instead of keeping the old mode's hex.
+    """
+    if colour and colour.startswith("@"):
+        return getattr(theme, colour[1:], "") or theme.TEXT_MUTED or "#888888"
+    return colour or theme.TEXT_MUTED or "#888888"
 
 
 def pixmap(name: str, colour: str | None = None, size: int = 16) -> QPixmap:
@@ -52,7 +74,7 @@ def pixmap(name: str, colour: str | None = None, size: int = 16) -> QPixmap:
     font = QFont("Segoe Fluent Icons")
     font.setPixelSize(int(size * scale * 0.86))
     painter.setFont(font)
-    painter.setPen(QColor(colour or theme.TEXT_MUTED or "#888888"))
+    painter.setPen(QColor(_resolve_colour(colour)))
     painter.drawText(canvas.rect(), Qt.AlignmentFlag.AlignCenter, glyph)
     painter.end()
     return canvas

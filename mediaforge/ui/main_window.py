@@ -352,6 +352,13 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Repair did not finish", job.error[:800])
             self._set_status(f"{job.title}: {job.message}")
             return
+        if job.category == "edit":
+            # The Edit flow reports in place on its Result step, failures included.
+            self.edit_panel.on_job_update(job)
+            if job.state == JobState.DONE:
+                self._refresh_library()
+            self._set_status(f"{job.title}: {job.message or job.state.value}")
+            return
         if job.category in ("photofilm", "autopilot"):
             self.photo_panel.on_job_update(job)
             if job.state == JobState.DONE:
@@ -511,7 +518,7 @@ class MainWindow(QMainWindow):
     def _on_sidebar_collapsed(self, collapsed: bool) -> None:
         self.context.settings.sidebar_collapsed = collapsed
         self.context.settings.save()
-        self._set_status("Sidebar hidden — Ctrl+\ brings it back"
+        self._set_status("Sidebar hidden — Ctrl+\\ brings it back"
                          if collapsed else "Sidebar shown")
 
     def toggle_advanced(self) -> None:

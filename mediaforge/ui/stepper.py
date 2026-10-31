@@ -133,7 +133,15 @@ class StepFlow(QWidget):
     def go_to(self, index: int) -> None:
         if not 0 <= index < len(self.steps):
             return
+        # A stacked widget is as tall as its tallest page, so a short settings form would
+        # sit above a screen of empty space and a preview would stretch past the fold.
+        # Pages that are not showing are told to ask for no room at all.
+        for position in range(self.stack.count()):
+            policy = (QSizePolicy.Policy.Preferred if position == index
+                      else QSizePolicy.Policy.Ignored)
+            self.stack.widget(position).setSizePolicy(policy, policy)
         self.stack.setCurrentIndex(index)
+        self.stack.updateGeometry()
         self._reached = max(self._reached, index)
         self._sync()
         self.step_changed.emit(index)

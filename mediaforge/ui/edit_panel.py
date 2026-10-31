@@ -1,4 +1,10 @@
-"""Edit panel: local ffmpeg operations on one asset at a time."""
+"""Edit panel: one ffmpeg operation on one file, as four steps.
+
+File, tool, settings, result. The tools are tiles grouped by what they do to the
+picture, because forty operations in one dropdown is a list nobody reads. The result
+reports in place, and can be handed straight back in as the next source -- trim, then
+grade, then add a title, without a trip through the Library between each.
+"""
 
 from __future__ import annotations
 
@@ -7,70 +13,84 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QLineEdit, QMessageBox, QPushButton, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from .. import ffmpeg_extra, ffmpeg_tools
 from ..context import AppContext
+from ..jobs import Job, JobState
 from ..project import Asset
-from .widgets import ResponsiveSplitter, Card, FilePicker, MediaPreview
-from . import theme
+from .stepper import Step, StepFlow
+from .widgets import (
+    Card, FilePicker, JobStatusCard, MediaPreview, TileGrid, centred_page, show_in_stack,
+)
+from . import icons, theme
 
-# (label, key). Group headings are inserted as disabled separators by _build().
-OPERATIONS = [
-    ("-- Cut & time --", ""),
-    ("Trim", "trim"),
-    ("Auto jump-cut (remove silence)", "jumpcut"),
-    ("Split at scene changes", "scenesplit"),
-    ("Change speed", "speed"),
-    ("Reverse", "reverse"),
-    ("Loop / boomerang", "loop"),
-    ("Fade in / out", "fade"),
-
-    ("-- Frame & geometry --", ""),
-    ("Reframe for social (9:16 / 1:1)", "social"),
-    ("Crop", "crop"),
-    ("Rotate / flip", "rotate"),
-    ("Transcode / resize", "transcode"),
-
-    ("-- Look --", ""),
-    ("Colour grade", "grade"),
-    ("Apply LUT (.cube)", "lut"),
-    ("Sharpen", "sharpen"),
-    ("Denoise", "denoise"),
-    ("Deband (fix gradient banding)", "deband"),
-    ("Deinterlace", "deinterlace"),
-    ("HDR to SDR tonemap", "tonemap"),
-
-    ("-- Stabilise --", ""),
-    ("Stabilise (two-pass vidstab, best)", "vidstab"),
-    ("Stabilise (single-pass deshake, fast)", "stabilise"),
-
-    ("-- Composite --", ""),
-    ("Overlay watermark / logo", "overlay"),
-    ("Add text / title", "text"),
-    ("Picture in picture", "pip"),
-    ("Split screen", "splitscreen"),
-    ("Chroma key (green screen)", "chromakey"),
-    ("Blur a region (faces, plates)", "blurregion"),
-    ("Burn subtitles", "subtitles"),
-
-    ("-- Audio --", ""),
-    ("Add / replace audio", "audio"),
-    ("Normalise loudness (EBU R128)", "loudness"),
-    ("Clean speech (gate, de-noise, compress)", "cleanspeech"),
-    ("Extract audio", "extract_audio"),
-
-    ("-- Stills & export --", ""),
-    ("Still to video (Ken Burns)", "kenburns"),
-    ("Extract frames", "frames"),
-    ("Contact sheet", "contactsheet"),
-    ("Waveform image", "waveform"),
-    ("Convert / resize image", "convertimage"),
-    ("Export GIF", "gif"),
-    ("Export with platform preset", "export"),
+# (heading, [(key, tile label, glyph, what it does)])
+TOOL_GROUPS: list[tuple[str, list[tuple[str, str, str, str]]]] = [
+    ("Cut & time", [
+        ("trim", "Trim", "trim", "Keep one stretch of the clip, from a start to an end time."),
+        ("jumpcut", "Remove silence", "silence",
+         "Cuts out the pauses in speech, the way a jump-cut edit does by hand."),
+        ("scenesplit", "Split by scene", "scenes",
+         "Finds every cut in the footage and saves each scene as its own clip."),
+        ("speed", "Speed", "speed", "Faster or slower, with the pitch of the audio kept."),
+        ("reverse", "Reverse", "reverse", "Plays the clip backwards."),
+        ("loop", "Loop", "loop", "Repeats the clip, or plays it forward then back."),
+        ("fade", "Fade in / out", "fade", "Fades picture and sound from and to black."),
+    ]),
+    ("Frame", [
+        ("social", "Reframe for social", "phone",
+         "Vertical, square or 4:5, with a blurred fill instead of black bars."),
+        ("crop", "Crop", "crop", "Keeps one rectangle of the frame."),
+        ("rotate", "Rotate / flip", "rotate", "Turns a sideways phone clip upright, or mirrors it."),
+        ("transcode", "Resize / convert", "convert", "Changes size, frame rate, codec or quality."),
+    ]),
+    ("Look", [
+        ("grade", "Colour", "palette", "Brightness, contrast, saturation and gamma."),
+        ("lut", "Apply LUT", "layers", "Applies a .cube colour look from a camera or grading app."),
+        ("sharpen", "Sharpen", "sharpen", "Brings back edge detail in soft footage."),
+        ("denoise", "Reduce noise", "sparkle", "Removes grain from low-light footage."),
+        ("deband", "Fix banding", "deband", "Smooths the steps in skies and gradients."),
+        ("deinterlace", "Deinterlace", "lines",
+         "Removes the comb lines from old TV or camcorder video."),
+        ("tonemap", "HDR to SDR", "hdr", "Makes an HDR phone clip look right on ordinary screens."),
+    ]),
+    ("Stabilise", [
+        ("vidstab", "Stabilise (best)", "camera",
+         "Two passes: measures the camera shake, then smooths the path."),
+        ("stabilise", "Stabilise (fast)", "camera", "One pass. Quicker, less smooth."),
+    ]),
+    ("Layer", [
+        ("text", "Title / text", "text", "Writes a title or caption onto the picture."),
+        ("overlay", "Logo / watermark", "stamp", "Places an image, such as a logo, over the video."),
+        ("pip", "Picture in picture", "pip", "A second video in a corner of the first."),
+        ("splitscreen", "Split screen", "split", "Two videos side by side or stacked."),
+        ("chromakey", "Green screen", "key", "Replaces a green or blue background."),
+        ("blurregion", "Blur an area", "blur", "Hides a face, a number plate or a screen."),
+        ("subtitles", "Burn subtitles", "captions",
+         "Writes an .srt file permanently into the picture."),
+    ]),
+    ("Sound", [
+        ("audio", "Add music", "music", "Adds or replaces the soundtrack."),
+        ("loudness", "Loudness", "volume", "Sets the level to a broadcast or streaming target."),
+        ("cleanspeech", "Clean up voice", "mic", "Gates, de-noises and evens out speech."),
+        ("extract_audio", "Extract audio", "headphones", "Saves the sound as an MP3."),
+    ]),
+    ("Stills & export", [
+        ("kenburns", "Photo to video", "photo", "Turns a still into a slow zoom shot."),
+        ("frames", "Extract frames", "frames", "Saves a still every few seconds."),
+        ("contactsheet", "Contact sheet", "grid", "One image with a grid of frames from the clip."),
+        ("waveform", "Waveform image", "wave", "A picture of the soundtrack's shape."),
+        ("convertimage", "Convert image", "image", "Changes an image's format or size."),
+        ("gif", "GIF", "gif", "A small looping GIF for chat or the web."),
+        ("export", "Export for…", "export",
+         "Ready-made settings for YouTube, Instagram, TikTok and more."),
+    ]),
 ]
+TOOLS = {key: (label, glyph, tip) for _, entries in TOOL_GROUPS
+         for key, label, glyph, tip in entries}
+STEP_FILE, STEP_TOOL, STEP_SETTINGS, STEP_RESULT = range(4)
 
 
 class EditPanel(QWidget):
@@ -85,87 +105,135 @@ class EditPanel(QWidget):
         self._on_operation_changed()
 
     def _build(self) -> None:
-        outer = QHBoxLayout(self)
-        splitter = ResponsiveSplitter()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.flow = StepFlow([
+            Step("file", "File", "Pick the clip or image to edit."),
+            Step("tool", "Tool", "Choose what to do to it."),
+            Step("settings", "Settings", "Adjust, then continue."),
+            Step("result", "Result", "Run it and check what came out."),
+        ], finish_label="Run")
 
-        left = QWidget()
-        layout = QVBoxLayout(left)
-
-        self.source_label = QLabel("No source. Pick an asset in the Library and press "
-                                   "'Send to Edit'.")
+        # ---- step 1: the file ---------------------------------------------------------
+        file_page = QWidget()
+        layout = QVBoxLayout(file_page)
+        layout.setSpacing(theme.SPACE_3)
+        source_card = Card("Source")
+        source_row = QHBoxLayout()
+        self.source_label = QLabel("Nothing selected. Choose a file, or send one here "
+                                   "from the Library.")
         self.source_label.setWordWrap(True)
-        layout.addWidget(self.source_label)
-
-        pick_row = QHBoxLayout()
-        pick_button = QPushButton("Choose file from disk")
+        self.source_label.setTextFormat(Qt.TextFormat.RichText)
+        source_row.addWidget(self.source_label, 1)
+        pick_button = QPushButton("Choose file")
+        pick_button.setObjectName("tonal")
+        icons.button(pick_button, "folder", "@ACCENT")
         pick_button.clicked.connect(self._pick_file)
-        pick_row.addWidget(pick_button)
-        pick_row.addStretch(1)
-        layout.addLayout(pick_row)
+        source_row.addWidget(pick_button, 0, Qt.AlignmentFlag.AlignTop)
+        source_card.body.addLayout(source_row)
+        layout.addWidget(source_card)
+        self.preview = MediaPreview()
+        self.preview.setMinimumHeight(300)
+        layout.addWidget(self.preview, 1)
+        self.flow.add_page(centred_page(file_page))
 
-        operation_card = Card("Operation")
-        self.operation_box = QComboBox()
-        for label, key in OPERATIONS:
-            if not key:                      # group heading: shown, not selectable
-                self.operation_box.insertSeparator(self.operation_box.count())
-                self.operation_box.addItem(label, "")
-                index = self.operation_box.count() - 1
-                self.operation_box.model().item(index).setEnabled(False)
-                continue
-            self.operation_box.addItem(label, key)
-        self.operation_box.currentIndexChanged.connect(self._on_operation_changed)
-        operation_card.body.addWidget(self.operation_box)
-        layout.addWidget(operation_card)
+        # ---- step 2: the tool ---------------------------------------------------------
+        tool_page = QWidget()
+        layout = QVBoxLayout(tool_page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.tiles = TileGrid(TOOL_GROUPS)
+        self.tiles.chosen.connect(self._on_tile_chosen)
+        layout.addWidget(self.tiles)
+        layout.addStretch(1)
+        self.flow.add_page(centred_page(tool_page, 1080))
 
-        parameters_card = Card("Parameters")
+        # ---- step 3: its settings -----------------------------------------------------
+        settings_page = QWidget()
+        layout = QVBoxLayout(settings_page)
+        layout.setSpacing(theme.SPACE_3)
+        heading_row = QHBoxLayout()
+        heading_row.setSpacing(theme.SPACE_2)
+        self.tool_glyph = QLabel()
+        heading_row.addWidget(self.tool_glyph)
+        self.tool_title = QLabel("")
+        self.tool_title.setObjectName("h2")
+        heading_row.addWidget(self.tool_title)
+        heading_row.addStretch(1)
+        change_button = QPushButton("Change tool")
+        change_button.setObjectName("text")
+        change_button.clicked.connect(lambda: self.flow.go_to(STEP_TOOL))
+        heading_row.addWidget(change_button)
+        layout.addLayout(heading_row)
+        self.tool_hint = QLabel("")
+        self.tool_hint.setObjectName("subtle")
+        self.tool_hint.setWordWrap(True)
+        layout.addWidget(self.tool_hint)
+
+        parameters_card = Card("Settings")
         self.parameter_stack = QStackedWidget()
         self._pages: dict[str, QWidget] = {}
-        for _, key in OPERATIONS:
-            if not key or key in self._pages:
-                continue
+        for key in TOOLS:
             page = self._build_page(key)
             self._pages[key] = page
             self.parameter_stack.addWidget(page)
         parameters_card.body.addWidget(self.parameter_stack)
         layout.addWidget(parameters_card)
+        layout.addStretch(1)
+        self.flow.add_page(centred_page(settings_page, 760))
 
-        run_row = QHBoxLayout()
-        self.run_button = QPushButton("Run")
-        self.run_button.setObjectName("primary")
-        self.run_button.clicked.connect(self.run)
+        # ---- step 4: the result -------------------------------------------------------
+        result_page = QWidget()
+        layout = QVBoxLayout(result_page)
+        layout.setSpacing(theme.SPACE_3)
+        self.job_card = JobStatusCard("Output")
+        self.job_card.cancel_requested.connect(self.context.jobs.cancel)
+        again = QPushButton("Edit the result")
+        again.setObjectName("tonal")
+        icons.button(again, "edit", "@ACCENT")
+        again.setToolTip("Use what just came out as the source for another tool.")
+        again.clicked.connect(self._continue_from_result)
+        self.job_card.add_action(again)
+        layout.addWidget(self.job_card)
+        self.result_preview = MediaPreview()
+        self.result_preview.setMinimumHeight(280)
+        layout.addWidget(self.result_preview, 1)
         self.command_preview = QLabel("")
         self.command_preview.setWordWrap(True)
         self.command_preview.setObjectName("mono")
-        run_row.addWidget(self.run_button)
-        run_row.addStretch(1)
-        layout.addLayout(run_row)
+        self.command_preview.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.command_preview)
-        layout.addStretch(1)
+        self.flow.add_page(centred_page(result_page))
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(left)
-        splitter.addWidget(scroll)
+        outer.addWidget(self.flow, 1)
+        self.flow.step_changed.connect(self._step_changed)
+        self.flow.finished.connect(self.run)
+        self.tiles.select("trim")
+        self.flow.go_to(STEP_FILE)
 
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.addWidget(QLabel("Preview"))
-        self.preview = MediaPreview()
-        right_layout.addWidget(self.preview, 1)
-        splitter.addWidget(right)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        scroll.setMinimumWidth(400)
-        right.setMinimumWidth(340)
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(8)
-        outer.addWidget(splitter)
+    def _step_changed(self, index: int) -> None:
+        key = self.tiles.current()
+        if index == STEP_FILE:
+            self.flow.set_status(self.asset.label if self.asset else "Pick a file to edit.")
+            self.flow.set_next_enabled(self.asset is not None)
+        elif index == STEP_TOOL:
+            self.flow.set_status(f"Selected: {TOOLS[key][0]}" if key else "Choose a tool.")
+            self.flow.set_next_enabled(bool(key))
+        elif index == STEP_SETTINGS:
+            self.flow.set_status("")
+            self.flow.set_next_enabled(True)
+        else:
+            self.flow.set_next_enabled(self.asset is not None)
+            if self.job_card.job_id is None and self.asset is not None and key:
+                self.job_card.show_ready(
+                    f"<b>{TOOLS[key][0]}</b> on <b>{self.asset.path.name}</b>. "
+                    "The original is never changed; the result is saved to the "
+                    "project's renders folder.")
+                self.flow.set_status("Press Run to start.")
 
-        # Selected last: _on_operation_changed touches widgets built above, so the first
-        # real (non-heading) row can only be chosen once the whole panel exists.
-        first = next((index for index in range(self.operation_box.count())
-                      if self.operation_box.itemData(index)), 0)
-        self.operation_box.setCurrentIndex(first)
+    def _on_tile_chosen(self, key: str) -> None:
+        self._on_operation_changed()
+        self.flow.go_to(STEP_SETTINGS)
 
     # -- parameter pages ----------------------------------------------------------------
     def _build_page(self, key: str) -> QWidget:
@@ -379,10 +447,15 @@ class EditPanel(QWidget):
         return values
 
     def _on_operation_changed(self) -> None:
-        key = self.operation_box.currentData()
+        key = self.tiles.current()
         if key and key in self._pages:
-            self.parameter_stack.setCurrentWidget(self._pages[key])
+            show_in_stack(self.parameter_stack, self._pages[key])
+            label, glyph, tip = TOOLS[key]
+            self.tool_title.setText(label)
+            self.tool_hint.setText(tip)
+            self.tool_glyph.setPixmap(icons.pixmap(glyph, "@ACCENT", 22))
         self.command_preview.setText("")
+        self.job_card.show_ready("")
 
     # -- source ---------------------------------------------------------------------------
     def set_asset(self, asset: Asset) -> None:
@@ -397,6 +470,8 @@ class EditPanel(QWidget):
         if asset.duration:
             widgets = self._pages["trim"].property("widgets")
             widgets["end"].setText(ffmpeg_tools.format_timecode(asset.duration))
+        self.job_card.show_ready("")
+        self._step_changed(self.flow.current())
 
     def _pick_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Choose media", "", "Media (*.*)")
@@ -411,6 +486,30 @@ class EditPanel(QWidget):
             self.set_asset(asset)
             self.library_changed.emit()
 
+    def _continue_from_result(self) -> None:
+        """Hands the finished output back in as the source for the next tool."""
+        result = self.job_card.result_path
+        if result is None or not result.is_file() or self.context.project is None:
+            return
+        asset_id = self.context.catalogue(result, source="edit")
+        asset = self.context.require_project().asset(asset_id)
+        if asset:
+            self.set_asset(asset)
+            self.flow.go_to(STEP_TOOL)
+
+    def on_job_update(self, job: Job) -> None:
+        """Progress and outcome of an edit job, shown on the Result step."""
+        if not self.job_card.show_job(job):
+            return
+        if job.state == JobState.DONE:
+            if isinstance(job.result, Path) and job.result.is_file():
+                self.result_preview.show_path(job.result)
+            self.library_changed.emit()
+            self.flow.set_status("Done. Pick another tool, or edit the result further.")
+        elif job.state in (JobState.FAILED, JobState.CANCELLED):
+            self.flow.set_status("")
+        self.flow.set_next_enabled(job.state not in (JobState.QUEUED, JobState.RUNNING))
+
     # -- run --------------------------------------------------------------------------------
     def run(self) -> None:
         if not self.context.locator.available:
@@ -422,10 +521,11 @@ class EditPanel(QWidget):
             )
             return
         if self.asset is None or not self.asset.path.exists():
-            QMessageBox.information(self, "No source", "Send an asset here from the Library first.")
+            QMessageBox.information(self, "No source", "Pick a file to edit first.")
+            self.flow.go_to(STEP_FILE)
             return
 
-        key = self.operation_box.currentData()
+        key = self.tiles.current()
         values = self._page_values(key)
         project = self.context.require_project()
         source = self.asset.path
@@ -444,11 +544,10 @@ class EditPanel(QWidget):
             command, extra_work = self._build_command(key, values, source, duration, output, locator)
         except (ValueError, FileNotFoundError) as error:
             QMessageBox.warning(self, "Cannot run", str(error))
+            self.flow.go_to(STEP_SETTINGS)
             return
 
-        if command is not None:
-            self.command_preview.setText(command.display())
-
+        self.command_preview.setText(command.display() if command is not None else "")
         context = self.context
 
         def work(job_context):
@@ -465,10 +564,13 @@ class EditPanel(QWidget):
                 context.catalogue(command.output, source="edit")
             return command.output
 
-        job = self.context.jobs.submit(
-            f"{self.operation_box.currentText()}: {source.name}", work, category="edit"
-        )
-        self.status.emit(f"Job {job.id}: {self.operation_box.currentText()}")
+        label = TOOLS[key][0]
+        self.flow.go_to(STEP_RESULT)
+        job = self.context.jobs.submit(f"{label}: {source.name}", work, category="edit")
+        self.job_card.track(job.id, f"<b>{label}</b> on <b>{source.name}</b>")
+        self.flow.set_next_enabled(False)
+        self.flow.set_status("")
+        self.status.emit(f"Job {job.id}: {label}")
 
     def _build_command(self, key, values, source, duration, output, locator):
         """Returns (FfmpegCommand | None, custom_work | None)."""

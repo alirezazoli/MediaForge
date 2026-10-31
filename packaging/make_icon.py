@@ -69,13 +69,26 @@ def render(size: int) -> Image.Image:
     return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
+def render_check(size: int = 36) -> Image.Image:
+    """The tick inside a checked checkbox. A stylesheet can fill the box but cannot draw
+    a tick, so without this image a checked box is an unreadable solid square."""
+    scale = 4
+    canvas = Image.new("RGBA", (size * scale, size * scale), (0, 0, 0, 0))
+    unit = size * scale / 18
+    points = [(4 * unit, 9.5 * unit), (7.5 * unit, 13 * unit), (14 * unit, 5.5 * unit)]
+    ImageDraw.Draw(canvas).line(points, fill=(255, 255, 255, 255), width=round(2.2 * unit),
+                                joint="curve")
+    return canvas.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def main() -> None:
     ASSETS.mkdir(parents=True, exist_ok=True)
     frames = [render(size) for size in SIZES]
     frames[-1].save(ASSETS / "mediaforge.ico", sizes=[(s, s) for s in SIZES],
                     append_images=frames[:-1])
     frames[-1].save(ASSETS / "mediaforge.png")
-    print(f"Wrote mediaforge/assets/mediaforge.ico ({len(SIZES)} sizes)")
+    render_check().save(ASSETS / "check.png")
+    print(f"Wrote mediaforge/assets/mediaforge.ico ({len(SIZES)} sizes) and check.png")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 from typing import Any, Callable
 
@@ -9,13 +10,13 @@ from PySide6.QtCore import QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QSplitter,
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider, QSpinBox, QStackedWidget,
-    QTextEdit, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame,
+    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider, QSpinBox,
+    QStackedWidget, QTextEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
 from ..jobs import Job
-from . import theme
+from . import icons, theme
 
 try:
     from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -231,12 +232,18 @@ class MediaPreview(QWidget):
         layout.addWidget(self._stack, 1)
 
         controls = QHBoxLayout()
-        self._play_button = QPushButton("Play")
+        self._play_button = QPushButton()
+        self._play_button.setObjectName("iconButton")
+        self._play_button.setToolTip("Play / pause (Space)")
+        icons.button(self._play_button, "play", "@ACCENT", 18)
         self._play_button.clicked.connect(self.toggle_play)
         self._scrubber = QSlider(Qt.Orientation.Horizontal)
         self._scrubber.sliderMoved.connect(self._seek)
         self._time_label = QLabel("00:00 / 00:00")
-        self._open_button = QPushButton("Open externally")
+        self._open_button = QPushButton()
+        self._open_button.setObjectName("iconButton")
+        self._open_button.setToolTip("Open in the system player")
+        icons.button(self._open_button, "open", None, 16)
         self._open_button.clicked.connect(self._open_external)
         for widget in (self._play_button, self._scrubber, self._time_label, self._open_button):
             controls.addWidget(widget, 1 if widget is self._scrubber else 0)
@@ -290,7 +297,7 @@ class MediaPreview(QWidget):
             self._stack.setCurrentWidget(self._video_widget)
             self._player.setSource(QUrl.fromLocalFile(str(path)))
             self._set_controls_enabled(True)
-            self._play_button.setText("Play")
+            icons.button(self._play_button, "play", "@ACCENT", 18)
         else:
             self._image_label.setText(
                 f"{path.name}\n\nQt Multimedia is unavailable -- use 'Open externally'."
@@ -303,15 +310,15 @@ class MediaPreview(QWidget):
             return
         if self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self._player.pause()
-            self._play_button.setText("Play")
+            icons.button(self._play_button, "play", "@ACCENT", 18)
         else:
             self._player.play()
-            self._play_button.setText("Pause")
+            icons.button(self._play_button, "pause", "@ACCENT", 18)
 
     def stop(self) -> None:
         if self._player:
             self._player.stop()
-            self._play_button.setText("Play")
+            icons.button(self._play_button, "play", "@ACCENT", 18)
 
     def _seek(self, value: int) -> None:
         if self._player:
@@ -353,6 +360,251 @@ class Card(QFrame):
         self.body.setSpacing(8)
         outer.addLayout(self.body)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+
+
+def centred_page(inner: QWidget, max_width: int = 980) -> QWidget:
+    """One measure for every step page: centred and capped.
+
+    On a wide screen an uncapped form puts a label and its control at opposite ends of
+    the window, and the eye loses the row in between.
+    """
+    page = QWidget()
+    layout = QHBoxLayout(page)
+    layout.setContentsMargins(theme.SPACE_5, theme.SPACE_4, theme.SPACE_5, theme.SPACE_4)
+    layout.addStretch(1)
+    inner.setMaximumWidth(max_width)
+    layout.addWidget(inner, 6)
+    layout.addStretch(1)
+    return page
+
+
+def show_in_stack(stack: QStackedWidget, widget: QWidget) -> None:
+    """Shows one page and sizes the stack to it, not to the tallest page it holds."""
+    for index in range(stack.count()):
+        page = stack.widget(index)
+        policy = QSizePolicy.Policy.Preferred if page is widget else QSizePolicy.Policy.Ignored
+        page.setSizePolicy(policy, policy)
+    stack.setCurrentWidget(widget)
+    stack.updateGeometry()
+
+
+class TileGrid(QWidget):
+    """A choice shown as icon tiles in labelled groups.
+
+    A forty-row dropdown hides every option but one, so choosing means reading the whole
+    list in a popup. Tiles show the options all at once, grouped, with an icon each --
+    the eye finds "Crop" by its shape before reading a word. Columns follow the width,
+    so a narrow window gets fewer, wider tiles rather than clipped labels.
+
+    groups: [(heading, [(key, label, glyph, tooltip)])]
+    """
+
+    chosen = Signal(str)
+    TILE_WIDTH = 210
+
+    def __init__(self, groups: list[tuple[str, list[tuple[str, str, str, str]]]],
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+        self._tiles: dict[str, QToolButton] = {}
+        self._sections: list[tuple[QGridLayout, list[QToolButton]]] = []
+        self._columns = 0
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(theme.SPACE_2)
+        for heading, entries in groups:
+            if heading:
+                title = QLabel(heading)
+                title.setObjectName("cardTitle")
+                layout.addWidget(title)
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(theme.SPACE_2)
+            grid.setVerticalSpacing(theme.SPACE_2)
+            tiles = []
+            for key, label, glyph, tip in entries:
+                tile = QToolButton()
+                tile.setObjectName("tile")
+                tile.setText(label)
+                tile.setToolTip(tip or label)
+                tile.setCheckable(True)
+                tile.setCursor(Qt.CursorShape.PointingHandCursor)
+                tile.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+                tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                icons.button(tile, glyph, "@ACCENT", 18)
+                tile.clicked.connect(lambda _=False, k=key: self.chosen.emit(k))
+                self._group.addButton(tile)
+                self._tiles[key] = tile
+                tiles.append(tile)
+            self._sections.append((grid, tiles))
+            layout.addLayout(grid)
+            layout.addSpacing(theme.SPACE_2)
+        self._reflow(3)
+
+    def _reflow(self, columns: int) -> None:
+        if columns == self._columns:
+            return
+        self._columns = columns
+        for grid, tiles in self._sections:
+            for tile in tiles:
+                grid.removeWidget(tile)
+            for index, tile in enumerate(tiles):
+                grid.addWidget(tile, index // columns, index % columns)
+            for column in range(6):
+                grid.setColumnStretch(column, 1 if column < columns else 0)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._reflow(max(1, min(5, self.width() // self.TILE_WIDTH)))
+
+    def select(self, key: str) -> None:
+        tile = self._tiles.get(key)
+        if tile is not None:
+            tile.setChecked(True)
+
+    def current(self) -> str:
+        return next((key for key, tile in self._tiles.items() if tile.isChecked()), "")
+
+    def label(self, key: str) -> str:
+        tile = self._tiles.get(key)
+        return tile.text() if tile else key
+
+
+class JobStatusCard(QFrame):
+    """Progress, outcome and next moves for the job a step flow just started.
+
+    Sending the user to a separate Jobs screen to find out whether their trim worked
+    breaks the flow they are in. The job reports here, on the step that started it: a
+    bar while it runs, the error in plain words if it fails, and what to do next once
+    it is done.
+    """
+
+    cancel_requested = Signal(int)
+
+    def __init__(self, title: str = "Output", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("card")
+        self.job_id: int | None = None
+        self.result_path: Path | None = None
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(theme.SPACE_4, theme.SPACE_3, theme.SPACE_4, theme.SPACE_4)
+        outer.setSpacing(theme.SPACE_2)
+        heading = QLabel(title)
+        heading.setObjectName("cardTitle")
+        outer.addWidget(heading)
+
+        self.summary = QLabel("")
+        self.summary.setWordWrap(True)
+        self.summary.setTextFormat(Qt.TextFormat.RichText)
+        outer.addWidget(self.summary)
+
+        from PySide6.QtWidgets import QProgressBar
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 100)
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(4)
+        self.bar.hide()
+        outer.addWidget(self.bar)
+
+        self.message = QLabel("")
+        self.message.setObjectName("subtle")
+        self.message.setWordWrap(True)
+        self.message.setTextFormat(Qt.TextFormat.RichText)
+        self.message.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        outer.addWidget(self.message)
+
+        self.actions = QHBoxLayout()
+        self.actions.setSpacing(theme.SPACE_2)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setObjectName("ghost")
+        icons.button(self.cancel_button, "stop", "@ACCENT")
+        self.cancel_button.clicked.connect(
+            lambda: self.job_id is not None and self.cancel_requested.emit(self.job_id))
+        self.cancel_button.hide()
+        self.actions.addWidget(self.cancel_button)
+        self.folder_button = QPushButton("Show in folder")
+        self.folder_button.setObjectName("ghost")
+        icons.button(self.folder_button, "folder", "@ACCENT")
+        self.folder_button.clicked.connect(self._reveal)
+        self.folder_button.hide()
+        self.actions.addWidget(self.folder_button)
+        self.actions.addStretch(1)
+        outer.addLayout(self.actions)
+
+    def add_action(self, button: QPushButton) -> None:
+        """A next move offered once the job is done (hidden until then)."""
+        button.hide()
+        button.setProperty("onDone", True)
+        self.actions.insertWidget(self.actions.count() - 1, button)
+
+    def _done_actions(self, visible: bool) -> None:
+        for index in range(self.actions.count()):
+            widget = self.actions.itemAt(index).widget()
+            if widget is not None and widget.property("onDone"):
+                widget.setVisible(visible)
+
+    def show_ready(self, text: str) -> None:
+        """Before anything runs: what pressing the primary button will do."""
+        self.job_id = None
+        self.summary.setText(text)
+        self.bar.hide()
+        self.message.setText("")
+        self.cancel_button.hide()
+        self.folder_button.hide()
+        self._done_actions(False)
+
+    def track(self, job_id: int, text: str) -> None:
+        self.job_id = job_id
+        self.result_path = None
+        self.summary.setText(text)
+        self.bar.setValue(0)
+        self.bar.show()
+        self.message.setText("Starting…")
+        self.cancel_button.show()
+        self.folder_button.hide()
+        self._done_actions(False)
+
+    def show_job(self, job: Job) -> bool:
+        """Shows a job's progress if it is the one being tracked. Returns whether it was."""
+        from ..jobs import JobState
+
+        if job.id != self.job_id:
+            return False
+        if job.state in (JobState.QUEUED, JobState.RUNNING):
+            self.bar.setValue(int(job.progress * 100))
+            self.message.setText(html.escape(job.message or "Working…"))
+            return True
+        self.bar.hide()
+        self.cancel_button.hide()
+        if job.state == JobState.DONE:
+            result = job.result
+            self.result_path = result if isinstance(result, Path) else None
+            if self.result_path is not None:
+                self.message.setText(
+                    f"<span style='color:{theme.SUCCESS}'>Done.</span>  "
+                    f"{html.escape(self.result_path.name)}")
+            else:
+                self.message.setText(
+                    f"<span style='color:{theme.SUCCESS}'>Done.</span>  "
+                    f"{html.escape(str(result or '')[:600])}")
+            self.folder_button.setVisible(self.result_path is not None)
+            self._done_actions(True)
+        elif job.state == JobState.CANCELLED:
+            self.message.setText("Cancelled. Nothing was written.")
+        else:
+            first = (job.error or "Unknown error").strip().splitlines()
+            self.message.setText(
+                f"<span style='color:{theme.DANGER}'>Failed.</span>  "
+                f"{html.escape((first[-1] if first else '')[:400])}")
+        return True
+
+    def _reveal(self) -> None:
+        if self.result_path is None:
+            return
+        target = self.result_path if self.result_path.is_dir() else self.result_path.parent
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
 
 def message_row(text: str, on_click: Callable[[], None] | None = None) -> QWidget:

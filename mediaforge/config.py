@@ -39,8 +39,27 @@ def app_data_dir(respect_override: bool = True) -> Path:
     return directory
 
 
-SETTINGS_PATH = app_data_dir() / "settings.json"
-CREDENTIALS_PATH = app_data_dir() / "credentials.json"
+def settings_path() -> Path:
+    # Resolved on every call, not once at import: an override set after this module was
+    # first imported (the self-test sets one) must still be honoured.
+    return app_data_dir() / "settings.json"
+
+
+def credentials_path() -> Path:
+    return app_data_dir() / "credentials.json"
+
+
+def default_workspace() -> Path:
+    """Where projects go unless the user picks somewhere else.
+
+    Follows the profile override too. When it did not, an isolated test profile still
+    opened the user's real "Untitled Project", and test media ended up in it -- along with
+    a database that a stray write from a media library damaged.
+    """
+    override = os.environ.get("MEDIAFORGE_HOME")
+    if override:
+        return Path(override) / "MediaForge Projects"
+    return Path.home() / "MediaForge Projects"
 
 
 def _machine_key() -> bytes:
@@ -82,8 +101,8 @@ CREDENTIAL_SLOTS: dict[str, str] = {
 class Credentials:
     """Reads env vars first, then the on-disk store."""
 
-    def __init__(self, path: Path = CREDENTIALS_PATH) -> None:
-        self.path = path
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = path or credentials_path()
         self._stored: dict[str, str] = {}
         self.reload()
 
@@ -120,7 +139,7 @@ class Credentials:
 
 @dataclass
 class Settings:
-    workspace: str = str(Path.home() / "MediaForge Projects")
+    workspace: str = field(default_factory=lambda: str(default_workspace()))
     ffmpeg_path: str = ""          # empty means "look on PATH"
     ffprobe_path: str = ""
     max_parallel_jobs: int = 2
@@ -145,9 +164,10 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
-        if SETTINGS_PATH.exists():
+        path = settings_path()
+        if path.exists():
             try:
-                data: dict[str, Any] = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+                data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
                 known = {key: data[key] for key in data if key in cls.__annotations__}
                 return cls(**known)
             except (json.JSONDecodeError, OSError, TypeError):
@@ -155,7 +175,7 @@ class Settings:
         return cls()
 
     def save(self) -> None:
-        SETTINGS_PATH.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
+        settings_path().write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
 
     @property
     def workspace_path(self) -> Path:
