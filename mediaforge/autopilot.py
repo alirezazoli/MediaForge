@@ -13,9 +13,10 @@ from typing import Any, Sequence
 
 from . import learning as learning_module
 from . import sceneanalysis
-from .availability import State, model_availability
+from .availability import model_availability
 from .photofilm import PhotoFilmSettings, Shot
 from .providers import Capability
+from .providers.comfy_builtin import WAN22_ID, estimate_seconds, frames_for
 
 # Preference order when Auto picks an image-to-video model. Best-looking first; the first
 # one the user can actually run wins.
@@ -30,9 +31,14 @@ AI_PREFERENCE = [
     ("catalog", "wan-2.5"),
     ("catalog", "seedance-1.0-pro"),
     ("catalog", "pixverse-v5"),
+    # Runs on this PC through ComfyUI: no key, but minutes of GPU time per shot -- so
+    # any connected cloud model is preferred, and Auto spends it on fewer shots.
+    ("comfyui", WAN22_ID),
     ("catalog", "wan-2.2"),
     ("catalog", "ltx-2"),
 ]
+LOCAL_MODELS = {("comfyui", WAN22_ID)}
+LOCAL_AUTO_BUDGET = 3
 
 
 @dataclass
@@ -81,11 +87,16 @@ def best_ai_model(registry) -> tuple[tuple[str, str] | None, str]:
         state = model_availability(
             registry, provider_key, model_id, Capability.IMAGE_TO_VIDEO
         )
-        if state.state is State.READY:
+        # Only what can run unattended: a route that needs a hand-exported ComfyUI
+        # workflow would fail in the middle of a render.
+        if state.usable and state.unattended:
             return (provider_key, model_id), f"{model_id} — {state.reason}"
-        if state.state is State.FREE:
-            return (provider_key, model_id), f"{model_id} — free, {state.reason}"
     return None, "No image-to-video model is available yet (no API key, no local ComfyUI)."
+
+
+def local_minutes_per_shot(seconds: float) -> float:
+    """What one shot costs on this PC with the built-in model, from measured timings."""
+    return estimate_seconds("Standard", frames_for(seconds)) / 60.0
 
 
 def plan(
@@ -213,7 +224,8 @@ def plan(
 
     # -- per photo -------------------------------------------------------------------------
     shots: list[Shot] = []
-    ai_budget = _ai_budget(len(photos), use_ai)
+    local = model in LOCAL_MODELS
+    ai_budget = _ai_budget(len(photos), use_ai, local)
     ai_used = 0
 
     for position, source_index in enumerate(order):
@@ -262,9 +274,13 @@ def plan(
     if model is not None and use_ai != "never":
         result.decisions.append(AutoDecision(
             "AI usage", f"{ai_used} of {len(shots)} shots",
-            "Wide exteriors and aerials get real 3D movement, where a flat pan would show. "
-            "Interiors and close details keep the free camera move — the difference is not "
-            "worth the cost there."
+            ("Wide exteriors get generated motion on this PC with Wan 2.2 — about "
+             f"{local_minutes_per_shot(settings.seconds_each):.0f} min per shot, so Auto uses "
+             f"it on at most {LOCAL_AUTO_BUDGET}. The rest keep a camera move."
+             if local else
+             "Wide exteriors and aerials get real 3D movement, where a flat pan would show. "
+             "Interiors and close details keep the camera move — the difference is not "
+             "worth the cost there.")
             if use_ai == "auto" else "Every shot, as you asked.",
         ))
 
@@ -316,14 +332,15 @@ def diversify_moves(shots: list[Shot]) -> int:
     return changed
 
 
-def _ai_budget(count: int, use_ai: str) -> int:
-    """How many shots Auto is willing to spend money on."""
+def _ai_budget(count: int, use_ai: str, local: bool = False) -> int:
+    """How many shots Auto is willing to spend money -- or GPU minutes -- on."""
     if use_ai == "always":
         return count
     if use_ai == "never":
         return 0
-    # Enough to carry the film without turning a 20-photo set into a large bill.
-    return max(1, min(count, 6))
+    # Enough to carry the film without turning a 20-photo set into a large bill, or,
+    # on this PC, into an hour of rendering.
+    return max(1, min(count, LOCAL_AUTO_BUDGET if local else 6))
 
 
 def apply_global_overrides(

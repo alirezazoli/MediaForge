@@ -253,7 +253,7 @@ class PhotoClipPanel(QWidget):
         auto_form.setHorizontalSpacing(14)
 
         self.ai_policy = QComboBox()
-        self.ai_policy.addItems(["Where it helps", "Every photo", "Never (free only)"])
+        self.ai_policy.addItems(["Where it helps", "Every photo", "Never (camera moves only)"])
         self.ai_policy.setToolTip(
             "Where it helps: real 3D movement on wide exteriors and aerials, free "
             "camera moves elsewhere.\nEvery photo: costs the most.\n"
@@ -611,7 +611,7 @@ class PhotoClipPanel(QWidget):
             window.go_to(target)
 
     def _refresh_ai_banner(self) -> None:
-        wants_ai = self.ai_policy.currentText() != "Never (free only)"
+        wants_ai = self.ai_policy.currentText() != "Never (camera moves only)"
         model, reason = autopilot.best_ai_model(self.context.registry)
 
         if model is None and wants_ai:
@@ -649,7 +649,14 @@ class PhotoClipPanel(QWidget):
             )
             self.ai_banner.setVisible(True)
         elif model is not None and wants_ai:
-            self.ai_banner.setText(f"AI video ready — {model[1]}. {reason}")
+            if model in autopilot.LOCAL_MODELS:
+                minutes = autopilot.local_minutes_per_shot(self.settings().seconds_each)
+                self.ai_banner.setText(
+                    f"<b>Generated motion runs on this PC</b> with Wan 2.2 through ComfyUI — "
+                    f"about {minutes:.0f} min per AI shot on this GPU. The other shots keep a "
+                    f"camera move and render in seconds.")
+            else:
+                self.ai_banner.setText(f"AI video ready — {model[1]}. {reason}")
             self.ai_banner.setStyleSheet(
                 f"background:{theme.tint(theme.FREE, 0.12)}; color:{theme.FREE};"
                 f"border:1px solid {theme.tint(theme.FREE, 0.35)}; border-radius:8px; padding:10px;"
@@ -759,7 +766,7 @@ class PhotoClipPanel(QWidget):
             return
 
         policy = {"Where it helps": "auto", "Every photo": "always",
-                  "Never (free only)": "never"}[self.ai_policy.currentText()]
+                  "Never (camera moves only)": "never"}[self.ai_policy.currentText()]
         target = float(self.target_length.value())
         reorder = self.reorder_check.isChecked()
         context = self.context
@@ -908,6 +915,8 @@ class PhotoClipPanel(QWidget):
             if provider is None:
                 return None
 
+            width, height = self.settings().size
+            aspect = "1:1" if width == height else ("9:16" if height > width else "16:9")
             request = GenerationRequest(
                 capability=Capability.IMAGE_TO_VIDEO,
                 model_id=model_id,
@@ -916,14 +925,17 @@ class PhotoClipPanel(QWidget):
                 options={
                     "duration": max(2, int(round(shot.seconds))),
                     "duration_seconds": max(2, int(round(shot.seconds))),
-                    "aspect_ratio": "9:16" if self.settings().size[1] > self.settings().size[0]
-                    else "16:9",
+                    "seconds": shot.seconds,
+                    "aspect_ratio": aspect,
                 },
                 output_dir=output_dir,
             )
             result = provider.generate(
                 request, progress=progress, should_cancel=cancel or (lambda: False)
             )
+            # A model that animates the scene but not the camera says so; the film then
+            # adds the shot's own camera move when it conforms the clip.
+            shot.ai_static_camera = (result.raw or {}).get("camera") == "static"
             return result.files[0] if result.files else None
 
         return renderer

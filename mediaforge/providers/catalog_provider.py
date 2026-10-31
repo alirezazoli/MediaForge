@@ -129,7 +129,15 @@ class CatalogProvider(Provider):
         # Fall back to any route: many endpoints serve several capabilities.
         return matching or list(entry.get("routes", []))
 
-    def resolve_route(self, model_id: str, capability: Capability) -> tuple[Provider, str, dict]:
+    def resolve_route(self, model_id: str, capability: Capability,
+                      has_workflow: bool = False) -> tuple[Provider, str, dict]:
+        """The first route that can actually run now.
+
+        ComfyUI needs no key, so "configured" says nothing about it: a built-in graph
+        runs only if its model files are on the server, and a "workflow" route only if
+        the user has picked a workflow file. Treating either as ready would stop the
+        search before a cloud route that does work.
+        """
         if self._registry is None:
             raise ProviderError("Catalogue is not attached to a registry.")
 
@@ -149,7 +157,18 @@ class CatalogProvider(Provider):
             if not provider.configured:
                 tried.append(f"{provider.name} (no key)")
                 continue
-            return provider, route.get("endpoint", ""), route
+            endpoint = route.get("endpoint", "")
+            if provider.key == "comfyui":
+                if endpoint == "workflow" and not has_workflow:
+                    tried.append("ComfyUI (needs a workflow file: export one with Workflow -> "
+                                 "Export (API) and pick it in the 'Workflow path' option)")
+                    continue
+                if endpoint != "workflow":
+                    ready, why = provider.builtin_status(endpoint)
+                    if not ready:
+                        tried.append(f"ComfyUI ({why})")
+                        continue
+            return provider, endpoint, route
 
         detail = "; ".join(tried) if tried else "no matching backend"
         raise ProviderError(
@@ -166,7 +185,9 @@ class CatalogProvider(Provider):
         should_cancel: Callable[[], bool] | None = None,
     ) -> GenerationResult:
         started = time.time()
-        provider, endpoint, route = self.resolve_route(request.model_id, request.capability)
+        provider, endpoint, route = self.resolve_route(
+            request.model_id, request.capability,
+            has_workflow=bool(request.options.get("workflow_path")))
         progress(0.02, f"Routing via {provider.name} -> {endpoint}")
 
         # Hand the concrete provider a request carrying the route's own endpoint id.
@@ -174,15 +195,6 @@ class CatalogProvider(Provider):
         delegated = copy.copy(request)
         delegated.model_id = endpoint
         delegated.options = dict(request.options)
-
-        if route.get("provider") == "comfyui" and not delegated.options.get("workflow_path"):
-            entry = self._entries.get(request.model_id, {})
-            raise ProviderError(
-                f"The ComfyUI route for {entry.get('label', request.model_id)} needs a workflow. "
-                "Export a graph from ComfyUI with Workflow -> Export (API), then pick it in the "
-                "'Workflow path' option.\n"
-                f"Model repo: {entry.get('repo', 'see the catalogue entry')}"
-            )
 
         result = provider.generate(delegated, progress=progress, should_cancel=should_cancel)
         result.provider = f"catalog:{provider.key}"

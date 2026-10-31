@@ -94,6 +94,7 @@ class Shot:
     analysis: object | None = None   # SceneAnalysis, kept loose to avoid a hard import
     resolved_transform: str = ""     # filled in during render, for reporting
     note: str = ""
+    ai_static_camera: bool = False   # the AI clip animates the scene, not the camera
 
     def label(self) -> str:
         return self.path.name
@@ -235,11 +236,26 @@ def build_shot(
     return FfmpegCommand(argv, output, shot.seconds, f"Shot {index + 1}: {move}")
 
 
+# How far an AI clip may be slowed to fill its shot before the rest is held instead.
+# Beyond about 1.5x, slowed foliage and water start to look like a different speed.
+MAX_STRETCH = 1.5
+
+
 def build_conform(
     locator: FfmpegLocator, source: Path, output: Path, settings: PhotoFilmSettings,
-    shot: Shot, index: int,
+    shot: Shot, index: int, source_seconds: float = 0.0,
 ) -> FfmpegCommand:
-    """Brings an AI-generated clip to the project's canvas, fps and duration."""
+    """Brings an AI-generated clip to the project's canvas, fps and duration.
+
+    Two things a clip from a local model needs that a cloud clip usually does not:
+
+      * **Length.** The local model makes at most 3.4 s, and a shot is often 4-5 s. An
+        output shorter than its shot would throw every later crossfade off, so the clip
+        is slowed a little and, if still short, its last frame is held.
+      * **Camera.** It animates the scene but barely moves the camera (measured: no
+        global shift first to last frame). `shot.ai_static_camera` adds the shot's own
+        camera move on top, smoothed the same way as a still's.
+    """
     locator.require()
     width, height = settings.size
     frames = max(2, int(shot.seconds * settings.fps))
@@ -249,11 +265,30 @@ def build_conform(
         vignette=shot.vignette, grain=shot.grain,
     )
 
+    timing = ""
+    if 0 < source_seconds < shot.seconds:
+        stretch = min(shot.seconds / source_seconds, MAX_STRETCH)
+        held = shot.seconds - source_seconds * stretch
+        timing = f"setpts={stretch:.4f}*PTS,fps={settings.fps},"
+        if held > 0.01:
+            timing += f"tpad=stop_mode=clone:stop_duration={held + 0.1:.3f},"
+    else:
+        timing = f"fps={settings.fps},"
+
+    if shot.ai_static_camera:
+        move = "Still (no motion)" if shot.transform == "Still" else resolve_move(shot, index)
+        # Gentler than on a still: the scene already moves, and the two add up.
+        zoom, x, y = motion_expression(move, frames, shot.motion_strength * 0.7)
+        framing = (
+            f"{_fit_chain(width, height, 'fill', 2)},"
+            f"zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={width}x{height}:fps={settings.fps},"
+        )
+    else:
+        framing = (f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                   f"crop={width}:{height},")
+
     argv = [locator.ffmpeg, "-y", "-hide_banner", "-i", str(source)]
-    base = (
-        f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-        f"crop={width}:{height},fps={settings.fps},setsar=1,format=yuv420p[base]"
-    )
+    base = f"[0:v]{timing}{framing}setsar=1,format=yuv420p[base]"
     graph = base + ";"
     if wants_source:
         argv += [
@@ -398,7 +433,12 @@ def render(
                 shot.note = f"AI failed ({str(error)[:120]}); used a camera move instead."
             if raw is not None and Path(raw).exists():
                 progress(base_progress + share * 0.85, f"Photo {index + 1}: conforming")
-                command = build_conform(locator, Path(raw), target, settings, shot, index)
+                try:
+                    source_seconds = ffmpeg_tools.probe(locator, Path(raw)).duration
+                except Exception:          # an unreadable length only loses the stretch
+                    source_seconds = 0.0
+                command = build_conform(locator, Path(raw), target, settings, shot, index,
+                                        source_seconds)
                 code, log = ffmpeg_tools.run_with_progress(
                     command, should_cancel=should_cancel
                 )

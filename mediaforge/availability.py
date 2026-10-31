@@ -29,6 +29,10 @@ class Availability:
     state: State
     reason: str = ""
     needs: tuple[str, ...] = ()
+    # False when it runs only with something the user supplies by hand -- a ComfyUI
+    # workflow file. Selectable on the Generate screen, where that file can be picked;
+    # never chosen automatically, because nothing could supply it.
+    unattended: bool = True
 
     @property
     def usable(self) -> bool:
@@ -93,10 +97,22 @@ def catalog_model_availability(
 
     missing: list[str] = []
     local_hint = ""
+    by_hand: Availability | None = None
     for route in routes:
         provider_key = catalog.ROUTE_TO_PROVIDER.get(route.get("provider", ""))
         provider = registry.get(provider_key) if provider_key else None
         if provider is None:
+            continue
+        if provider.key == "comfyui":
+            # A ComfyUI route is only as good as its endpoint: a built-in graph runs by
+            # itself if its files are there; "workflow" needs a file the user exports.
+            state = comfyui_availability(provider, route.get("endpoint", "workflow"))
+            if state.state is State.FREE and state.unattended:
+                return state
+            if state.state is State.FREE:
+                by_hand = by_hand or state
+            else:
+                local_hint = local_hint or state.reason
             continue
         state = provider_availability(provider)
         if state.state is State.FREE:
@@ -112,6 +128,8 @@ def catalog_model_availability(
         else:
             missing.append(provider.name)
 
+    if by_hand is not None:
+        return by_hand
     unique = tuple(dict.fromkeys(missing))
     if unique and local_hint:
         reason = (f"Needs an API key for {' or '.join(unique)} — or run it free locally: "
@@ -135,7 +153,23 @@ def model_availability(
     provider = registry.get(provider_key)
     if provider is None:
         return Availability(State.LOCKED, "Provider not found")
+    if provider.key == "comfyui":
+        return comfyui_availability(provider, model_id)
     return provider_availability(provider)
+
+
+def comfyui_availability(provider: Provider, endpoint: str) -> Availability:
+    """A built-in graph is ready when its files are; a workflow needs one picked by hand."""
+    status = getattr(provider, "builtin_status", None)
+    if callable(status) and endpoint != "workflow":
+        ready, reason = status(endpoint)
+        return Availability(State.FREE if ready else State.LOCKED, reason,
+                            () if ready else (provider.name,))
+    state = provider_availability(provider)
+    if state.state is not State.FREE:
+        return state
+    return Availability(State.FREE, "Runs in your ComfyUI with a workflow you export for it "
+                        "(ComfyUI: Workflow -> Export (API)).", unattended=False)
 
 
 def free_models(registry: Registry) -> list[tuple[str, str, Availability]]:
@@ -145,7 +179,9 @@ def free_models(registry: Registry) -> list[tuple[str, str, Availability]]:
         for spec in provider.models:
             for capability in spec.capabilities:
                 state = model_availability(registry, provider.key, spec.id, capability)
-                if state.state is State.FREE:
+                # Counted only if it runs as it stands: a model that first needs a
+                # workflow file exported by hand is not "ready with no key".
+                if state.state is State.FREE and state.unattended:
                     found.append((provider.key, spec.id, state))
                     break
     return found
@@ -164,13 +200,15 @@ def decorate_combo(combo, entries: list[tuple[str, Any, Availability]]) -> int:
     combo.blockSignals(True)
     combo.clear()
     first_usable = -1
+    first_by_hand = -1
 
     for label, data, state in entries:
         suffix = ""
         if state.state is State.FREE:
-            suffix = "   ·  no key"
+            suffix = "   ·  no key" if state.unattended else "   ·  needs a workflow file"
         elif state.state is State.LOCKED:
-            suffix = "   ·  needs a key"
+            # A local engine that is not running is not missing a key; say which it is.
+            suffix = "   ·  needs a key" if "key" in state.reason.lower() else "   ·  not ready"
         combo.addItem(f"{label}{suffix}", data)
         index = combo.count() - 1
         item = combo.model().item(index)
@@ -182,9 +220,14 @@ def decorate_combo(combo, entries: list[tuple[str, Any, Availability]]) -> int:
             item.setForeground(QBrush(QColor(theme.TEXT_FAINT)))
         elif state.state is State.FREE:
             item.setForeground(QBrush(QColor(theme.FREE)))
-        if state.usable and first_usable < 0:
+        if state.usable and state.unattended and first_usable < 0:
             first_usable = index
+        elif state.usable and first_by_hand < 0:
+            first_by_hand = index
 
+    # Land on something that runs as it is; a workflow-file route only if nothing else can.
+    if first_usable < 0:
+        first_usable = first_by_hand
     if first_usable >= 0:
         combo.setCurrentIndex(first_usable)
     combo.blockSignals(False)

@@ -18,7 +18,7 @@ from . import theme
 SUGGESTIONS = [
     "What can you do?",
     "Look at my photos and tell me what you see",
-    "Plan a 20 second vertical video, free only",
+    "Plan a 20 second vertical video, camera moves only",
     "Make everything rainy and moody",
     "Which video models can I actually use right now?",
     "What have you learned about how I work?",

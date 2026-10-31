@@ -308,11 +308,12 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["text_to_video", "image_to_video"],
-      "notes": "Apache 2.0 MoE model, the open flagship. Runs locally on a 24 GB GPU via ComfyUI. Free.",
+      "notes": "Apache 2.0, the open flagship. The 5B TI2V model is built in: it runs on this PC through ComfyUI on an 8 GB GPU, no workflow needed. The 14B MoE needs 24 GB.",
       "repo": "https://github.com/Wan-Video/Wan2.2",
       "options_preset": "video_basic",
       "routes": [
-        {"provider": "comfyui", "endpoint": "workflow", "capability": "text_to_video", "verified": true},
+        {"provider": "comfyui", "endpoint": "wan2.2-ti2v-5b", "capability": "image_to_video", "verified": true},
+        {"provider": "comfyui", "endpoint": "wan2.2-ti2v-5b", "capability": "text_to_video", "verified": true},
         {"provider": "fal", "endpoint": "fal-ai/wan/v2.2-a14b/text-to-video", "capability": "text_to_video", "verified": true},
         {"provider": "replicate", "endpoint": "wan-video/wan-2.2-t2v-fast", "capability": "text_to_video", "verified": true}
       ]
@@ -324,7 +325,7 @@
       "openness": "open",
       "tags": ["open-weights", "local", "fast", "audio"],
       "capabilities": ["text_to_video", "image_to_video"],
-      "notes": "First open model with synced audio+video in one pass. Fastest open inference; runs on 8 GB VRAM. Free.",
+      "notes": "First open model with synced audio+video in one pass. Fastest open inference; runs on 8 GB VRAM.",
       "repo": "https://github.com/Lightricks/LTX-Video",
       "options_preset": "video_basic",
       "routes": [
@@ -340,7 +341,7 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["text_to_video", "image_to_video"],
-      "notes": "13B cinematic model, exceptional motion quality. Wants a 3090/4090/A6000. Free.",
+      "notes": "13B cinematic model, exceptional motion quality. Wants a 3090/4090/A6000.",
       "repo": "https://github.com/Tencent-Hunyuan/HunyuanVideo",
       "options_preset": "video_basic",
       "routes": [
@@ -355,7 +356,7 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["text_to_video"],
-      "notes": "Apache 2.0. Strong photorealistic text-to-video. Free.",
+      "notes": "Apache 2.0. Strong photorealistic text-to-video.",
       "repo": "https://github.com/genmoai/mochi",
       "options_preset": "video_basic",
       "routes": [
@@ -370,7 +371,7 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["text_to_video", "image_to_video"],
-      "notes": "Strong image-to-video. Runs on modest GPUs. Free.",
+      "notes": "Strong image-to-video. Runs on modest GPUs.",
       "repo": "https://github.com/THUDM/CogVideo",
       "options_preset": "video_basic",
       "routes": [
@@ -384,7 +385,7 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["text_to_video", "image_to_video"],
-      "notes": "Human-centric, infinite-length autoregressive video. Free.",
+      "notes": "Human-centric, infinite-length autoregressive video.",
       "repo": "https://github.com/SkyworkAI/SkyReels-V2",
       "options_preset": "video_basic",
       "routes": [
@@ -398,7 +399,7 @@
       "openness": "open",
       "tags": ["open-weights", "local", "low-vram"],
       "capabilities": ["image_to_video"],
-      "notes": "Generates long video on as little as 6 GB VRAM. The best low-end local option. Free.",
+      "notes": "Generates long video on as little as 6 GB VRAM. The best low-end local option.",
       "repo": "https://github.com/lllyasviel/FramePack",
       "options_preset": "video_basic",
       "routes": [
@@ -460,7 +461,7 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["text_to_image"],
-      "notes": "The open image workhorse. FLUX.1 schnell is Apache 2.0 and fully free for commercial use. Free locally.",
+      "notes": "The open image workhorse. FLUX.1 schnell is Apache 2.0 and free for commercial use.",
       "repo": "https://github.com/black-forest-labs/flux",
       "options_preset": "image_basic",
       "routes": [
@@ -476,7 +477,7 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["image_edit"],
-      "notes": "Open instruction-based image editing. The free alternative to Nano Banana.",
+      "notes": "Open instruction-based image editing. The open alternative to Nano Banana.",
       "repo": "https://github.com/black-forest-labs/flux",
       "options_preset": "image_basic",
       "routes": [
@@ -491,7 +492,7 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["text_to_image", "image_edit"],
-      "notes": "Apache 2.0. Exceptional text rendering inside images. Free.",
+      "notes": "Apache 2.0. Exceptional text rendering inside images.",
       "repo": "https://github.com/QwenLM/Qwen-Image",
       "options_preset": "image_basic",
       "routes": [
@@ -506,7 +507,7 @@
       "openness": "open",
       "tags": ["open-weights", "local"],
       "capabilities": ["text_to_image", "image_edit"],
-      "notes": "The most tooled-for open image models: ControlNet, IP-Adapter, LoRA ecosystem. Free.",
+      "notes": "The most tooled-for open image models: ControlNet, IP-Adapter, LoRA ecosystem.",
       "repo": "https://github.com/Stability-AI/generative-models",
       "options_preset": "image_basic",
       "routes": [
