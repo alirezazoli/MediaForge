@@ -118,6 +118,11 @@ class SettingsPanel(QWidget):
         endpoint_form.addRow("OpenAI-compatible base URL", self.openai_base_edit)
         self.comfy_edit = QLineEdit()
         endpoint_form.addRow("ComfyUI URL", self.comfy_edit)
+        self.comfy_folder_edit = QLineEdit()
+        self.comfy_folder_edit.setToolTip(
+            "The folder holding ComfyUI's main.py. Blank: MediaForge looks in the usual "
+            "places, and can start it for you when generated motion is wanted.")
+        endpoint_form.addRow("ComfyUI folder", self.comfy_folder_edit)
         self.proxy_edit = QLineEdit()
         self.proxy_edit.setPlaceholderText("http://127.0.0.1:8080 -- leave blank for none")
         endpoint_form.addRow("HTTP proxy", self.proxy_edit)
@@ -172,6 +177,10 @@ class SettingsPanel(QWidget):
         self.ffmpeg_edit.setText(settings.ffmpeg_path)
         self.openai_base_edit.setText(settings.openai_base_url)
         self.comfy_edit.setText(settings.comfyui_url)
+        self.comfy_folder_edit.setText(settings.comfyui_folder)
+        found = self.context.comfy_install()
+        self.comfy_folder_edit.setPlaceholderText(
+            f"Found: {found.root}" if found else "Not found -- paste the ComfyUI folder")
         self.proxy_edit.setText(settings.proxy_url)
         self.region_box.setCurrentText(settings.seedance_region)
         self.parallel_box.setValue(settings.max_parallel_jobs)
@@ -193,6 +202,7 @@ class SettingsPanel(QWidget):
         settings.ffprobe_path = settings.ffmpeg_path
         settings.openai_base_url = self.openai_base_edit.text().strip()
         settings.comfyui_url = self.comfy_edit.text().strip()
+        settings.comfyui_folder = self.comfy_folder_edit.text().strip()
         settings.proxy_url = self.proxy_edit.text().strip()
         settings.seedance_region = self.region_box.currentText()
         settings.max_parallel_jobs = self.parallel_box.value()

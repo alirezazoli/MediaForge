@@ -147,6 +147,7 @@ class Settings:
     default_video_provider: str = "google"
     default_llm_provider: str = "anthropic"
     comfyui_url: str = "http://127.0.0.1:8188"
+    comfyui_folder: str = ""        # blank = look in the usual places
     ollama_url: str = "http://127.0.0.1:11434"
     agent_model: str = ""            # blank = pick the best installed
     agent_autorun_tools: bool = True  # ask before anything costly regardless

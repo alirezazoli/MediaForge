@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 from .. import atmosphere as atmo
 from .. import repair as repair_module
-from .. import autopilot, learning, photofilm, sceneanalysis
+from .. import autopilot, comfyserver, learning, photofilm, sceneanalysis
 from ..context import AppContext
 from ..ffmpeg_tools import IMAGE_SUFFIXES
 from ..photofilm import (
@@ -606,15 +606,51 @@ class PhotoClipPanel(QWidget):
         self.create_button.setEnabled(self._job_id is None)
 
     def _go_from_banner(self, target: str) -> None:
+        if target == "start_comfyui":
+            self.start_comfyui()
+            return
         window = getattr(self, "_main_window", None)
         if window is not None:
             window.go_to(target)
+
+    def start_comfyui(self) -> None:
+        context = self.context
+        job = context.jobs.submit(
+            "Start ComfyUI",
+            lambda job_context: context.start_comfyui(
+                lambda fraction, message: job_context.progress(fraction, message),
+                lambda: job_context.cancelled),
+            category="engine")
+        self.ai_banner.setText("<b>Starting ComfyUI…</b> This takes about half a minute.")
+        self.status.emit(f"Job {job.id}: starting ComfyUI")
+
+    def _local_ai_waiting(self) -> bool:
+        """ComfyUI and the Wan 2.2 files are on this PC, but the server is not running."""
+        install = self.context.comfy_install()
+        comfy = self.context.registry.get("comfyui")
+        return (install is not None and comfyserver.has_wan22_files(install)
+                and comfy is not None and not comfy.reachable())
 
     def _refresh_ai_banner(self) -> None:
         wants_ai = self.ai_policy.currentText() != "Never (camera moves only)"
         model, reason = autopilot.best_ai_model(self.context.registry)
 
-        if model is None and wants_ai:
+        if model is None and wants_ai and self._local_ai_waiting():
+            minutes = autopilot.local_minutes_per_shot(self.settings().seconds_each)
+            self.ai_banner.setText(
+                "<b>ComfyUI with Wan 2.2 is installed on this PC but not running.</b> "
+                f"<a href='start_comfyui' style='color:{theme.ACCENT}'>Start it</a> and photos "
+                f"get generated motion here — about {minutes:.0f} min per AI shot.")
+            self.ai_banner.setOpenExternalLinks(False)
+            if not getattr(self, "_banner_links_wired", False):
+                self.ai_banner.linkActivated.connect(self._go_from_banner)
+                self._banner_links_wired = True
+            self.ai_banner.setStyleSheet(
+                f"background:{theme.tint(theme.ACCENT, 0.10)}; color:{theme.TEXT};"
+                f"border:1px solid {theme.tint(theme.ACCENT, 0.35)}; border-radius:8px; "
+                f"padding:10px;")
+            self.ai_banner.setVisible(True)
+        elif model is None and wants_ai:
             # Saying only what is missing reads as "this app has no AI" when the local,
             # free AI is installed and working elsewhere. Name what runs now, then give
             # the two routes to the part that does not, as things to click.

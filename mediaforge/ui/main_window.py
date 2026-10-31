@@ -355,6 +355,19 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Repair did not finish", job.error[:800])
             self._set_status(f"{job.title}: {job.message}")
             return
+        if job.category == "engine":
+            # Starting ComfyUI: whatever offered it refreshes in place, success or not.
+            if job.state == JobState.DONE:
+                self.generate_panel._reload_capabilities()
+                self.director_panel.reload_providers()
+                self.hub_panel.refresh()
+                self.photo_panel._refresh_ai_banner()
+            elif job.state == JobState.FAILED:
+                self.photo_panel._refresh_ai_banner()
+                self.photo_panel.ai_banner.setText(
+                    "<b>ComfyUI did not start.</b> " + job.error.strip().splitlines()[-1][:300])
+            self._set_status(f"{job.title}: {job.message or job.state.value}")
+            return
         if job.category == "director" and self.director_panel.on_job_update(job):
             if job.state == JobState.DONE:
                 self._refresh_library()

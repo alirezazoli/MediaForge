@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import ffmpeg_extra, ffmpeg_tools
+from . import comfyserver, ffmpeg_extra, ffmpeg_tools
 from .config import Credentials, Settings
 from .jobs import JobQueue
 from .learning import LearningStore
@@ -27,6 +27,7 @@ class AppContext:
         self.jobs = JobQueue(max_workers=max(1, self.settings.max_parallel_jobs))
         self.project: Project | None = None
         self._encoders: dict[str, bool] | None = None
+        self.comfy_process = None        # set only when this session started ComfyUI
 
     @property
     def encoders(self) -> dict[str, bool]:
@@ -58,7 +59,38 @@ class AppContext:
         self.local_tools.reload()
         self._encoders = None
 
+    def comfy_install(self) -> "comfyserver.ComfyInstall | None":
+        return comfyserver.find_install(self.settings.comfyui_folder)
+
+    def start_comfyui(self, progress=lambda fraction, message: None,
+                      should_cancel=lambda: False) -> str:
+        """Starts the local ComfyUI and waits for it to answer. Runs on a job thread."""
+        from .providers import comfy_builtin
+        from .runtime import log_dir
+
+        install = self.comfy_install()
+        if install is None:
+            raise RuntimeError("No ComfyUI folder was found. Set its location in Settings.")
+        comfy = self.registry.get("comfyui")
+        url = comfy.base_url if comfy else self.settings.comfyui_url
+        if comfy is not None and comfy.reachable(force=True):
+            return "ComfyUI is already running."
+        progress(0.02, "Starting ComfyUI")
+        self.comfy_process = comfyserver.start(install, url, log_dir() / "comfyui.log")
+        if not comfyserver.wait_until_up(url, self.comfy_process, progress=progress,
+                                         should_cancel=should_cancel):
+            comfyserver.stop(self.comfy_process)
+            self.comfy_process = None
+            raise RuntimeError("ComfyUI did not start. Its output is in the log folder "
+                               "(comfyui.log).")
+        # Both caches answer "no" for a while after a miss; this is the moment to forget.
+        if comfy is not None:
+            comfy.reachable(force=True)
+        comfy_builtin._files_cache.clear()
+        return f"ComfyUI is running at {url}."
+
     def shutdown(self) -> None:
+        comfyserver.stop(self.comfy_process)
         self.jobs.shutdown()
         if self.project:
             self.project.close()
