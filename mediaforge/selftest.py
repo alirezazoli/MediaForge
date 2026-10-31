@@ -137,6 +137,16 @@ def run(report_path: Path | None = None) -> int:
             context.shutdown()
     check("the main window builds", main_window)
 
+    def playback_backend() -> str:
+        # The preview player depends on a Qt plugin that a frozen build can silently
+        # leave behind; with it missing, every preview stays blank and nothing says why.
+        from PySide6.QtMultimedia import QMediaFormat
+        formats = QMediaFormat().supportedFileFormats(QMediaFormat.ConversionMode.Decode)
+        if not formats:
+            raise RuntimeError("Qt Multimedia has no decoding backend")
+        return f"{len(formats)} container formats can be previewed"
+    check("the preview player has a backend", playback_backend)
+
     failed = [r for r in results if not r["ok"]]
     summary = {
         "app": APP_NAME, "version": __version__, "frozen": is_frozen(),
