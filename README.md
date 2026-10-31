@@ -1,276 +1,209 @@
 # MediaForge Studio
 
-A Windows desktop workbench for AI video and photo production. One app that talks to the
-generative video/image APIs, does the local editing with ffmpeg, and runs an agent that
-takes a written brief all the way to an assembled cut.
+A Windows desktop studio for video and photo work: turn photos into a moving film, repair
+and upscale footage, edit with 38 ffmpeg tools, generate with the AI video and image
+APIs, and let a director agent take a written brief all the way to an assembled cut.
 
-## Run it
+Everything that can run on your own machine does — editing, repair, the photo film, and
+the local AI engines need no account and no network. The cloud models are optional and
+only used with your own keys.
+
+## Install
+
+Download `MediaForge-Studio-<version>-Setup.exe` from the
+[Releases](https://github.com/alirezazoli/MediaForge/releases) page and run it.
+
+- Installs for the current user by default — no administrator prompt. "Install for all
+  users" is offered on the first page.
+- ffmpeg is included (in `ffmpeg\` beside the program), so editing and rendering work
+  straight away.
+- Settings, keys and the learning history live in `%APPDATA%\MediaForge`; projects in
+  `%USERPROFILE%\MediaForge Projects`. Uninstalling removes the program and leaves both
+  alone.
+- Windows 10 or 11, 64-bit.
+
+Check an installed copy end to end at any time:
 
 ```bash
-C:\Users\Alireza\PyCharmMiscProject\.venv\Scripts\python.exe -m mediaforge
+"%LOCALAPPDATA%\Programs\MediaForge Studio\MediaForge.exe" --selftest --report selftest.json
 ```
 
-or double-click `MediaForge.bat`. Check the environment first with:
+It finds ffmpeg and its filters, loads the catalogues, renders a short film from
+generated photos, measures a clip with known faults, builds every screen and checks the
+preview player. The exit code is the number of failed checks.
 
-```bash
-C:\Users\Alireza\PyCharmMiscProject\.venv\Scripts\python.exe -m mediaforge --doctor
-```
+## Screens
 
-## Photos to video
+Every task is a short sequence of steps with one primary button that is always the next
+move, and every job reports its progress on the screen that started it.
 
-The main thing. Open the app, it lands on **Photos to video**:
+| Screen | Steps | What it does |
+|---|---|---|
+| Photos to video | Photos → Look → Film → Create | Photos become shots with camera moves, crossfades, atmosphere and music |
+| Repair & upscale | Video → Analyse → Fix → Result | Measures noise, softness, dead air, bars, shake, interlacing and loudness, then fixes what it found; before/after wipe |
+| Batch repair | Folder → Analyse → Fix → Repair | The same, for a whole folder, with a per-file account of what happened |
+| Edit | File → Tool → Settings → Result | 38 ffmpeg tools as tiles; the result can be fed straight back in for the next tool |
+| Enhance | File → What to do → Result | Local AI engines: Real-ESRGAN, Real-CUGAN, waifu2x, RIFE, rembg, Whisper, Demucs, Kokoro |
+| Generate | Task → Model → Prompt → Result | Every provider capability; only tasks something can actually run are shown |
+| Director | Brief → Crew → Cut → Result | Writes a shot list, makes stills and clips, narrates, assembles |
 
-1. Drag photos onto the strip (or Add photos / Add folder).
-2. Drag thumbnails to reorder — they play left to right.
-3. Pick a shape, a pace, and a movement. Optionally add music.
-4. Press **Create video**. Progress and preview appear on the same screen.
+Also: Library, Timeline, Templates, Find music (licence-checked), Model Hub, Assistant
+(a local Ollama model that drives the app), Learning, Jobs, Settings. **Ctrl+K** opens the
+command palette; **F1** lists every shortcut.
 
-Each photo becomes a moving shot — slow zoom or drift — and the shots crossfade together,
-open from black and close to black. Music is trimmed to length and faded at both ends.
+## What runs locally, and what needs a key
 
-Movement styles: **Auto (varied)** cycles zoom in → pan right → zoom out → pan left →
-zoom in + pan up → pan down, so no two shots feel the same. Or pick one and hold it.
+Each model in a dropdown says up front whether it will run: nothing appended means a
+configured key covers it, **no key** means it runs without one, **needs a key** means it
+is disabled and its tooltip names the key that would unlock it. "Only what runs without
+an API key" on the Generate screen hides the rest.
 
-Photos of mixed aspect ratios are handled: fill the frame (crop), fit with blurred edges,
-or fit with black bars.
+### Open models (run locally through ComfyUI)
 
-**No API key, no account, no network.** It is ffmpeg on your own machine.
-
-## Availability: what you can actually use
-
-Every model shows its state before you click it:
-
-- **FREE** (green) — runs on your machine with no key. Open-weight models through a local
-  ComfyUI, plus the local engines.
-- **usable** — a key is configured for a backend that can run it.
-- **needs a key** (greyed, unselectable) — no configured backend. The row is disabled, and
-  its tooltip names exactly which key would unlock it.
-
-The Generate screen has a **Free only** switch that hides everything needing a key. With no
-keys at all you still get 15 free models and every local tool.
-
-## Which models are actually free?
-
-Verified August 2026. This matters more than the marketing suggests — "available" and
-"open" are different things.
+Verified August 2026. "Available" and "open" are different things.
 
 | Model | Weights | Where |
 |---|---|---|
-| **MiniMax H3 (Hailuo 3)** | **OPEN** — released 2026-08-03, ~42.5 GB | HuggingFace, native ComfyUI |
-| **Wan 2.2** | **OPEN** Apache 2.0 — the open flagship | [Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2) |
-| **LTX-2 / LTX-Video** | **OPEN** — first open model with synced audio+video | [Lightricks/LTX-Video](https://github.com/Lightricks/LTX-Video) |
-| **HunyuanVideo** | **OPEN** 13B, best-in-class motion | [Tencent-Hunyuan/HunyuanVideo](https://github.com/Tencent-Hunyuan/HunyuanVideo) |
-| **Mochi 1** | **OPEN** Apache 2.0 | [genmoai/mochi](https://github.com/genmoai/mochi) |
-| **CogVideoX** | **OPEN** | [THUDM/CogVideo](https://github.com/THUDM/CogVideo) |
-| **SkyReels V2** | **OPEN**, human-centric, infinite length | [SkyworkAI/SkyReels-V2](https://github.com/SkyworkAI/SkyReels-V2) |
-| **FramePack** | **OPEN**, long video on 6 GB VRAM | [lllyasviel/FramePack](https://github.com/lllyasviel/FramePack) |
-| **FLUX.1 dev / schnell / Kontext** | **OPEN** (schnell is Apache 2.0) | [black-forest-labs/flux](https://github.com/black-forest-labs/flux) |
-| **Qwen-Image** | **OPEN** Apache 2.0, best text-in-image | [QwenLM/Qwen-Image](https://github.com/QwenLM/Qwen-Image) |
-| **SDXL / SD 3.5** | **OPEN**, biggest LoRA/ControlNet ecosystem | [Stability-AI](https://github.com/Stability-AI/generative-models) |
-| **Lip Sync** | **OPEN** — LatentSync (ByteDance), MuseTalk, Wav2Lip | [bytedance/LatentSync](https://github.com/bytedance/LatentSync) |
-| **Motion Control** | **OPEN** — Wan-VACE, MimicMotion, Champ, StableAnimator | [ali-vilab/VACE](https://github.com/ali-vilab/VACE) |
-| Wan 2.7 | **partly** — some weights on ModelScope, unclear licence | ModelScope |
-| Seedance 2.5 / 2.0 / Fast / Mini / 1.5 Pro / 1.0 | **closed** — API only | — |
-| Kling 3.0 / 2.6 / 2.5 Turbo | **closed** | — |
-| Hailuo 2.3 / 02 | **closed** (only H3 is open) | — |
-| Veo 3.1 | **closed** | — |
-| Grok Imagine / 1.5 | **closed** | — |
-| Pixverse V5 | **closed** | — |
-| Wan 2.5 / 2.6 | **closed** — API-first releases | — |
-| Nano Banana | **closed** (FLUX Kontext is the open substitute) | — |
+| **MiniMax H3 (Hailuo 3)** | **open** — released 2026-08-03, ~42.5 GB | HuggingFace, native ComfyUI |
+| **Wan 2.2** | **open**, Apache 2.0 | [Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2) |
+| **LTX-2 / LTX-Video** | **open** — synced audio and video | [Lightricks/LTX-Video](https://github.com/Lightricks/LTX-Video) |
+| **HunyuanVideo** | **open**, 13B | [Tencent-Hunyuan/HunyuanVideo](https://github.com/Tencent-Hunyuan/HunyuanVideo) |
+| **Mochi 1** | **open**, Apache 2.0 | [genmoai/mochi](https://github.com/genmoai/mochi) |
+| **CogVideoX** | **open** | [THUDM/CogVideo](https://github.com/THUDM/CogVideo) |
+| **SkyReels V2** | **open** | [SkyworkAI/SkyReels-V2](https://github.com/SkyworkAI/SkyReels-V2) |
+| **FramePack** | **open**, long video on 6 GB VRAM | [lllyasviel/FramePack](https://github.com/lllyasviel/FramePack) |
+| **FLUX.1 dev / schnell / Kontext** | **open** (schnell is Apache 2.0) | [black-forest-labs/flux](https://github.com/black-forest-labs/flux) |
+| **Qwen-Image** | **open**, Apache 2.0 | [QwenLM/Qwen-Image](https://github.com/QwenLM/Qwen-Image) |
+| **SDXL / SD 3.5** | **open** | [Stability-AI](https://github.com/Stability-AI/generative-models) |
+| Lip sync: LatentSync, MuseTalk, Wav2Lip | **open** | [bytedance/LatentSync](https://github.com/bytedance/LatentSync) |
+| Motion: Wan-VACE, MimicMotion, Champ | **open** | [ali-vilab/VACE](https://github.com/ali-vilab/VACE) |
+| Seedance, Kling, Hailuo 2.x, Veo 3.1, Grok Imagine, Pixverse, Wan 2.5/2.6, Nano Banana | **closed** — API only | — |
 
 Anything on GitHub claiming to be "Seedance weights" or "Kling open source" is an API
-wrapper or worse. ByteDance open-sources plenty of research code — Seedance is not part
-of it.
+wrapper or worse.
 
-**All open models above run locally and free through ComfyUI.** Model Hub → Local engines
-→ install ComfyUI, then point Settings → ComfyUI URL at it.
-
-## Free local (non-generative) AI engines
-
-Installed on demand from Model Hub. No key, no cost, offline. The `ncnn-vulkan` ones are
-self-contained `.exe` files that run on **any** Vulkan GPU — AMD and Intel included, no CUDA.
+### Local engines (Model Hub, installed on request)
 
 | Engine | Does | Licence |
 |---|---|---|
-| Real-ESRGAN | 2×/3×/4× upscale, photo + anime models | BSD-3 |
+| Real-ESRGAN | 2×/3×/4× upscale, photo and anime models | BSD-3 |
 | Real-CUGAN | upscale + denoise, best on illustration | MIT |
 | waifu2x | gentle denoise + upscale | MIT |
-| RIFE | frame interpolation → 60/120 fps, slow motion | MIT |
-| rembg (U2Net/BiRefNet) | background removal | MIT |
-| faster-whisper | offline transcription with word timings, 99 languages | MIT |
-| Demucs | vocals/drums/bass/other stem separation | MIT |
-| Kokoro TTS | free local voiceover, near-paid quality | Apache-2.0 |
-| Gyroflow | gyro-data stabilisation, beats any optical method | GPL-3 |
-| CodeFormer / GFPGAN | face restoration | S-Lab / Apache |
-| ProPainter | video object removal + inpainting | S-Lab |
-| SAM 2 | click an object, track it through the clip | Apache-2.0 |
-| RobustVideoMatting | real-time video matting, no green screen | GPL-3 |
-| Auto-Editor | alternative silence-cut engine | Unlicense |
-| ComfyUI | the local engine for every open model above | GPL-3 |
+| RIFE | frame interpolation, slow motion | MIT |
+| rembg | background removal | MIT |
+| faster-whisper | offline transcription, 99 languages | MIT |
+| Demucs | vocal / drum / bass / other stems | MIT |
+| Kokoro | local text to speech | Apache-2.0 |
+| ComfyUI | the engine for every open model above | GPL-3 |
 
-## What is in it
+The `ncnn-vulkan` engines are self-contained and run on any Vulkan GPU, AMD and Intel
+included. The Python engines (Whisper, Demucs, rembg, Kokoro) install into their own
+environment under `%APPDATA%\MediaForge\engines-python`, created from any Python 3.10+ on
+the machine, and always run as a separate process.
 
-### Providers (all optional — the app works with whichever keys you have)
+### Cloud providers (all optional)
 
 | Provider | Models | Capabilities |
 |---|---|---|
-| **Google** | Nano Banana (Gemini 2.5 Flash Image), Imagen 4, Veo 3.1 / Veo 3.1 Fast, Gemini 2.5 Pro/Flash | image gen, image edit, text→video, image→video, scripting, video understanding |
-| **ByteDance Seedance** (Volcengine Ark / BytePlus) | Seedance 1.0 Pro, Lite t2v, Lite i2v, Seedream 4.0 | text→video, image→video (first/last frame), image gen |
-| **Qwen-Omni / Wan** (Alibaba DashScope) | Qwen3-Omni Flash, Qwen3-Omni 30B, Wan 2.5 t2v/i2v | omni-modal in/out, speech synth, text→video |
-| **fal.ai** | FLUX, Kontext, Seedance, Veo 3, Kling 2, Hailuo 02, Wan, LTX-Video, HunyuanVideo, Topaz, Real-ESRGAN, Whisper + anything you paste | everything |
-| **Replicate** | FLUX, Nano Banana, Seedance, Wan 2.2, LTX-Video, Real-ESRGAN, Whisper + anything you paste | everything |
-| **ComfyUI** | any API-format workflow, local and free | image/video gen, upscale |
-| **Anthropic** | Claude Opus 5 / Sonnet 5 | scripts, shotlists, captions |
-| **ElevenLabs** | Multilingual v2, Turbo v2.5, Scribe v1 | voiceover, transcription with word timings |
-| **OpenAI-compatible** | gpt-image-1, whisper-1, gpt-4o-mini-tts, gpt-4.1 — also OpenRouter, Groq, Together, vLLM, LM Studio, Ollama | image, transcribe, TTS, text |
+| Google | Nano Banana, Imagen 4, Veo 3.1, Gemini 2.5 | image, image edit, video, scripting, video understanding |
+| ByteDance Seedance (Volcengine Ark / BytePlus) | Seedance, Seedream | video, image |
+| Alibaba DashScope | Qwen3-Omni, Wan 2.5 | omni-modal, speech, video |
+| fal.ai, Replicate | hundreds, plus any model id you paste | everything |
+| Anthropic | Claude | scripts, shot lists, captions |
+| ElevenLabs | Multilingual v2, Turbo v2.5, Scribe | voice, transcription |
+| OpenAI-compatible | OpenAI, OpenRouter, Groq, Together, vLLM, LM Studio, Ollama | image, speech, text |
 
-**The open-source long tail:** fal.ai and Replicate are generic. Paste any model id into
-Settings → Custom models and it becomes a first-class entry in the Generate panel with an
-Extra JSON field for model-specific inputs. That is the path to the GitHub model catalogue
-without waiting for a code change.
+Keys are entered in Settings and stored obfuscated in `%APPDATA%\MediaForge`. An
+environment variable always wins: `GEMINI_API_KEY`, `ARK_API_KEY`, `DASHSCOPE_API_KEY`,
+`FAL_KEY`, `REPLICATE_API_TOKEN`, `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`,
+`ANTHROPIC_API_KEY`.
 
-### Local editing — 38 operations, no AI, no network
+**Adding a model needs no code.** `catalog/models.json` is copied to your config folder;
+add an entry with a `routes` list and it appears in Generate with a working options form.
+An untouched copy follows the bundled catalogue through upgrades; once you edit it, it is
+yours and is never overwritten.
 
-**Cut & time** — trim · auto jump-cut (silence detection) · split at scene changes ·
-speed ramp · reverse · loop / boomerang · fade in-out
-**Frame** — social reframe (9:16 / 1:1 / 4:5, blurred fill) · crop · rotate / flip · transcode
-**Look** — colour grade · LUT (.cube) · sharpen · denoise (hqdn3d / nlmeans / atadenoise /
-removegrain / bm3d) · deband · deinterlace · HDR→SDR tonemap
-**Stabilise** — two-pass vidstab (proper) · single-pass deshake (fast)
-**Composite** — watermark · text / titles · picture-in-picture · split screen · chroma key ·
-region blur (faces, plates) · burn subtitles
-**Audio** — add / replace / mix · EBU R128 loudness normalise · speech clean-up chain
-(high-pass, de-noise, gate, compress, limit) · extract
-**Stills & export** — Ken Burns · extract frames · contact sheet · waveform image ·
-image convert & resize · GIF · **12 platform export presets**
+## Run from source
 
-Export presets: YouTube 1080p/4K · Shorts/TikTok/Reels · Instagram 1:1 and 4:5 · X ·
-LinkedIn · WhatsApp · Web VP9 · HEVC 4K · ProRes 422 master · lossless archive.
-Hardware encoding via NVENC / AMF / QSV, probed against your actual ffmpeg build.
-
-### Templates
-
-Seven starters in the CapCut / Google Vids spirit — Reel 3-beat hook, product hero,
-photo slideshow, talking head + b-roll, before/after, cinematic trailer, 6-step explainer.
-A template sets the canvas, fills slots from your Library selection, and several carry a
-Director brief you can send straight to the agent. Editable JSON.
-
-### Navigation
-
-A left sidebar, not ten tabs. It opens showing **six** entries — Home, Photos to video,
-Edit, Enhance, Generate, Director. The other six (Library, Timeline, Templates, Model Hub,
-Jobs, Settings) sit behind **Show advanced** (Ctrl+Shift+A), and reveal themselves
-automatically if you jump to one by shortcut.
-
-Home is a start screen of task cards plus an honest setup readout: whether ffmpeg is
-present, which local engines are installed, which API keys exist, and how many models are
-free right now.
-
-### Keyboard
-
-44 commands, every one bound and discoverable three ways: **Ctrl+K** command palette,
-generated menus, and **F1** for the full sheet. Ctrl+0..9 jump between sections,
-Ctrl+Shift+Return makes the photo clip, Ctrl+Return generates, Ctrl+R runs the current
-edit, Space plays the active preview, Ctrl+Shift+X renders the timeline.
-
-### Timeline
-
-Order clips, set in/out points, crossfade, render at any preset (1080p landscape, vertical,
-square, 4K), optionally with a music bed mixed under the original audio.
-
-### Director agent
-
-Brief → LLM writes a JSON shotlist → a still per shot (optionally locked to identity
-reference photos) → image→video per shot → narration → ffmpeg assembles the cut with
-crossfades. Every step is skippable, every intermediate lands in the library, and a failed
-step never destroys the work before it.
-
-## Setup
-
-1. **API keys** — Settings tab. Stored obfuscated in `%APPDATA%\MediaForge\credentials.json`.
-   An environment variable of the matching name always wins:
-   `GEMINI_API_KEY`, `ARK_API_KEY`, `DASHSCOPE_API_KEY`, `FAL_KEY`, `REPLICATE_API_TOKEN`,
-   `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `ANTHROPIC_API_KEY`.
-2. **ffmpeg** — required for all local editing, thumbnails and rendering. API generation
-   works without it.
-   ```bash
-   winget install Gyan.FFmpeg
-   ```
-   If `winget` is "not recognized", it exists but `%LOCALAPPDATA%\Microsoft\WindowsApps`
-   is missing from your PATH — call it by full path instead:
-   ```bash
-   & "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe" install Gyan.FFmpeg
-   ```
-   Chocolatey works too, from an **elevated** console: `choco install ffmpeg -y`.
-
-   Settings has an install button (it probes for winget then Chocolatey), a manual path
-   field, and a Re-detect button. The locator also searches the winget and Chocolatey
-   install folders directly, so ffmpeg is found without waiting for a PATH refresh.
-
-## Project layout on disk
-
-```
-<project>/
-  project.mfproj      SQLite catalogue: assets, generation history, timeline
-  media/              imported and generated files
-  renders/            exported cuts
-  cache/thumbs/       thumbnails
-  cache/staged/       trimmed segments during a timeline render
+```bash
+python -m venv .venv
 ```
 
-Self-contained — copy the folder anywhere and it still opens.
+```bash
+.venv\Scripts\python -m pip install -r requirements.txt
+```
 
-## Architecture
+```bash
+.venv\Scripts\python -m mediaforge
+```
+
+`--doctor` prints an environment report; `--version` the version. ffmpeg must be on PATH
+(or set in Settings) when running from source: `winget install Gyan.FFmpeg`.
+
+## Test
+
+```bash
+.venv\Scripts\python -m pip install pytest
+```
+
+```bash
+.venv\Scripts\python -m pytest
+```
+
+The suite drives the real screens and engines on media it generates with ffmpeg. Every
+run uses a throwaway profile and workspace (`MEDIAFORGE_HOME`), and `conftest.py` refuses
+to start if the workspace would be your real one.
+
+## Build the installer
+
+Needs the source requirements plus `pyinstaller`, ffmpeg installed through winget, and
+[Inno Setup 6](https://jrsoftware.org/isinfo.php).
+
+```bash
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Python .venv\Scripts\python.exe
+```
+
+It freezes the app (PyInstaller, one folder, windowed), copies ffmpeg and the licence texts
+in, runs the frozen build's own `--selftest`, and compiles
+`MediaForge-Studio-<version>-Setup.exe`. Output goes to `%USERPROFILE%\MediaForge-build`,
+outside the source tree.
+
+## Layout
 
 ```
 mediaforge/
-  config.py       settings + credential store
-  project.py      SQLite catalogue, assets, timeline
-  jobs.py         thread-pool queue with progress and cooperative cancellation
-  ffmpeg_tools.py probe, thumbnails, and every editing operation as an argv builder
-  agents.py       the Director pipeline
-  context.py      shared app state
-  providers/
-    base.py       Provider ABC + Capability enum + declarative option schema
-    http.py       shared HTTP + async job polling
-    google.py     Gemini / Imagen / Veo
-    gateways.py   Seedance, Qwen-Omni/Wan, fal.ai, Replicate, ComfyUI
-    assist.py     Anthropic, ElevenLabs, OpenAI-compatible
-  ui/             Qt panels — Library, Generate, Director, Edit, Timeline, Jobs, Settings
+  app.py            entry point and command-line options
+  runtime.py        log file, crash reporting, single instance
+  selftest.py       end-to-end checks for an installed copy
+  paths.py          where things are, from source and when installed
+  config.py         settings, credentials, profile location
+  enginepython.py   the separate Python for pip-installed engines
+  project.py        SQLite catalogue, assets, timeline
+  jobs.py           thread-pool queue with progress and cancellation
+  ffmpeg_tools.py   probing and every editing operation as an argv builder
+  repair.py         measure-then-fix pipeline; diagnose.py has the detectors
+  photofilm.py      photos to film; sceneanalysis.py, autopilot.py, atmosphere.py
+  localai.py        local engines; gpu.py picks the device and model
+  agents.py         the Director pipeline; agent.py the Ollama assistant
+  catalog/          models, local engines and templates as data
+  providers/        one class per backend
+  ui/               the screens; stepper.py, widgets.py, theme.py, icons.py are shared
+packaging/          PyInstaller spec, Inno Setup script, build.ps1, icon generator
+tests/              pytest suite
 ```
 
-**Adding a model needs no code at all.** `catalog/models.json` is copied to your config
-folder on first run and yours wins. Add an entry, press Ctrl+Shift+L, and it appears in
-Generate with a working options form:
-
-```json
-{
-  "id": "some-model-4",
-  "label": "Some Model 4.0",
-  "openness": "closed",
-  "capabilities": ["text_to_video"],
-  "options_preset": "video_audio",
-  "routes": [{"provider": "fal", "endpoint": "fal-ai/x/some-model-4",
-              "capability": "text_to_video", "verified": false}]
-}
-```
-
-A model declares *routes*; the catalogue picks the first route whose backend you have a
-key for and delegates. So one entry can run on fal.ai today and the vendor's native API
-tomorrow. Same for `localtools.json` (engines) and `templates.json` (starters).
-
-**Adding a provider backend** is one class plus one line in
-`providers/__init__.py:PROVIDER_CLASSES`. The UI builds its forms from the declarative
-`options` dict, so no UI code changes either way.
+Logs are in `%APPDATA%\MediaForge\logs\mediaforge.log`; an unexpected error is written
+there and shown with the path.
 
 ## Known limitations
 
-- Model ids for preview models (Veo, Seedance, Wan) change when the vendors rename them.
-  They are plain strings in the provider files, and fal/Replicate custom-model fields let
-  you route around a rename without touching code.
-- `stabilise` uses single-pass `deshake`; two-pass `vidstab` needs an ffmpeg build with
-  `--enable-libvidstab`.
-- The timeline is a cut list, not a multi-track NLE — one video track, one optional music bed.
-- Video-file upload to Gemini uses the raw (non-resumable) upload path; very large files
-  are better analysed after trimming.
+- Model ids for preview models (Veo, Seedance, Wan) change when vendors rename them. They
+  are plain data in the catalogue, and the fal/Replicate custom-model fields route around a
+  rename without a code change.
+- The timeline is a cut list, not a multi-track editor: one video track and a music bed.
+- The Python-based engines need a Python 3.10+ installed on the machine to set up their
+  environment; the GPU engines do not.
+- The installer is not code-signed, so Windows SmartScreen asks for confirmation on first
+  run.
+
+Third-party components and their licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
