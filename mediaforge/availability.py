@@ -53,10 +53,10 @@ def provider_availability(provider: Provider) -> Availability:
             return Availability(
                 State.LOCKED,
                 f"{provider.name} is not running at {url}. Start it (Model Hub -> Local "
-                f"engines) and it becomes free to use.",
+                f"engines) and it is ready to use.",
                 (provider.name,),
             )
-        return Availability(State.FREE, "Runs locally on your machine, free")
+        return Availability(State.FREE, "Runs locally on your machine.")
     if not provider.credential_slot:
         return Availability(State.FREE, "No API key required")
     if provider.configured:
@@ -169,7 +169,7 @@ def decorate_combo(combo, entries: list[tuple[str, Any, Availability]]) -> int:
     for label, data, state in entries:
         suffix = ""
         if state.state is State.FREE:
-            suffix = "   ·  FREE"
+            suffix = "   ·  no key"
         elif state.state is State.LOCKED:
             suffix = "   ·  needs a key"
         combo.addItem(f"{label}{suffix}", data)

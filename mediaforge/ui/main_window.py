@@ -135,6 +135,7 @@ class MainWindow(QMainWindow):
         self.generate_panel.status.connect(self._set_status)
         self.generate_panel.library_changed.connect(self._refresh_library)
         self.generate_panel.set_selection_provider(self.library_panel.selected_assets)
+        self.generate_panel.open_settings.connect(lambda: self.go_to("settings"))
         self.edit_panel.status.connect(self._set_status)
         self.edit_panel.library_changed.connect(self._refresh_library)
         self.enhance_panel.status.connect(self._set_status)
@@ -351,6 +352,11 @@ class MainWindow(QMainWindow):
                 # says where it is -- showing it beats hiding it in the Jobs list.
                 QMessageBox.warning(self, "Repair did not finish", job.error[:800])
             self._set_status(f"{job.title}: {job.message}")
+            return
+        if job.category == "generate" and self.generate_panel.on_job_update(job):
+            if job.state == JobState.DONE:
+                self._refresh_library()
+            self._set_status(f"{job.title}: {job.message or job.state.value}")
             return
         if job.category == "edit":
             # The Edit flow reports in place on its Result step, failures included.

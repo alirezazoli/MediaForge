@@ -1,179 +1,278 @@
-"""Generate panel: one form that drives every provider capability."""
+"""Generate panel: every provider capability, as four steps.
+
+Task, model, prompt, result. The old single form showed seventeen tasks in one dropdown
+and every field for every task at once -- a reference-image list on a text-to-speech job,
+a negative prompt on a transcription. Now the task is a tile, the model choice says up
+front whether it will run, and the prompt step shows only what that task takes.
+"""
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QMessageBox,
-    QPushButton, QScrollArea, QSpinBox, QSplitter, QTextEdit, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget,
+    QListWidgetItem, QMessageBox, QPushButton, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from .. import availability
 from ..context import AppContext
+from ..jobs import Job, JobState
 from ..providers import Capability, GenerationRequest, GenerationResult, ProviderError
-from . import theme
-from .widgets import ResponsiveSplitter, Card, MediaPreview, OptionsForm
+from . import icons, theme
+from .stepper import Step, StepFlow
+from .widgets import Card, JobStatusCard, MediaPreview, OptionsForm, TileGrid, centred_page
 
-CAPABILITY_ORDER = [
-    Capability.TEXT_TO_VIDEO,
-    Capability.IMAGE_TO_VIDEO,
-    Capability.TEXT_TO_IMAGE,
-    Capability.IMAGE_EDIT,
-    Capability.LIP_SYNC,
-    Capability.MOTION_TRANSFER,
-    Capability.VIDEO_EXTEND,
-    Capability.UPSCALE,
-    Capability.INTERPOLATE,
-    Capability.DENOISE,
-    Capability.RESTORE,
-    Capability.MATTE,
-    Capability.SEPARATE_AUDIO,
-    Capability.TEXT_TO_SPEECH,
-    Capability.TRANSCRIBE,
-    Capability.VIDEO_UNDERSTANDING,
-    Capability.LLM,
+C = Capability
+# (heading, [(capability, glyph, what it does)])
+TASK_GROUPS: list[tuple[str, list[tuple[Capability, str, str]]]] = [
+    ("Video", [
+        (C.TEXT_TO_VIDEO, "video", "Describe a shot and get a clip."),
+        (C.IMAGE_TO_VIDEO, "photos", "Bring a still to life with generated motion."),
+        (C.VIDEO_EXTEND, "next", "Continue a clip past its last frame."),
+        (C.MOTION_TRANSFER, "director", "Move a character the way a reference video moves."),
+        (C.LIP_SYNC, "chat", "Make a face speak a given audio track."),
+    ]),
+    ("Image", [
+        (C.TEXT_TO_IMAGE, "image", "Describe a picture and get it."),
+        (C.IMAGE_EDIT, "edit", "Change an image, or combine several, with words."),
+        (C.MATTE, "layers", "Cut the subject out of its background."),
+    ]),
+    ("Improve", [
+        (C.UPSCALE, "sharpen", "More pixels and recovered detail."),
+        (C.INTERPOLATE, "speed", "Smoother motion from generated in-between frames."),
+        (C.DENOISE, "sparkle", "Remove grain and compression noise."),
+        (C.RESTORE, "repair", "Repair faces and fine detail."),
+    ]),
+    ("Sound & text", [
+        (C.TEXT_TO_SPEECH, "volume", "A voice reading your script."),
+        (C.SEPARATE_AUDIO, "sliders", "Split a mix into voice, music and effects."),
+        (C.TRANSCRIBE, "captions", "Speech to text and subtitles."),
+        (C.VIDEO_UNDERSTANDING, "eye", "Ask questions about a video's content."),
+        (C.LLM, "chat", "Write scripts, shot lists and captions."),
+    ]),
 ]
+TASK_TIPS = {cap: tip for _, entries in TASK_GROUPS for cap, _, tip in entries}
 
 NEEDS_IMAGE = {Capability.IMAGE_EDIT, Capability.IMAGE_TO_VIDEO}
 NEEDS_MEDIA = {Capability.TRANSCRIBE, Capability.VIDEO_UNDERSTANDING, Capability.UPSCALE}
+# Tasks whose input is a file rather than words: the prompt is optional for them.
+PROMPT_OPTIONAL = {Capability.TRANSCRIBE, Capability.UPSCALE, Capability.INTERPOLATE,
+                   Capability.DENOISE, Capability.RESTORE, Capability.MATTE,
+                   Capability.SEPARATE_AUDIO}
+# Tasks where a negative prompt means something.
+TAKES_NEGATIVE = {Capability.TEXT_TO_IMAGE, Capability.TEXT_TO_VIDEO,
+                  Capability.IMAGE_TO_VIDEO, Capability.IMAGE_EDIT}
+AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a"}
+STEP_TASK, STEP_MODEL, STEP_PROMPT, STEP_RESULT = range(4)
 
 
 class GeneratePanel(QWidget):
     status = Signal(str)
     library_changed = Signal()
+    open_settings = Signal()
 
     def __init__(self, context: AppContext) -> None:
         super().__init__()
         self.context = context
         self._reference_images: list[Path] = []
         self._reference_media: Path | None = None
+        self._job_ids: set[int] = set()
         self._build()
         self._reload_capabilities()
 
     def _build(self) -> None:
-        outer = QHBoxLayout(self)
-        splitter = ResponsiveSplitter()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.flow = StepFlow([
+            Step("task", "Task", "Choose what to make."),
+            Step("model", "Model", "Pick the model that will make it."),
+            Step("prompt", "Prompt", "Describe it, and add any reference files."),
+            Step("result", "Result", "Generate, then review what came back."),
+        ], finish_label="Generate")
 
-        # -- left: the request form ---------------------------------------------------
-        form_host = QWidget()
-        form_layout = QVBoxLayout(form_host)
+        # ---- step 1: the task ---------------------------------------------------------
+        task_page = QWidget()
+        layout = QVBoxLayout(task_page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        groups = [(heading, [(cap.value, cap.label, glyph, tip) for cap, glyph, tip in entries])
+                  for heading, entries in TASK_GROUPS]
+        self.tiles = TileGrid(groups)
+        self.tiles.chosen.connect(self._on_task_chosen)
+        layout.addWidget(self.tiles)
+        self.empty_note = QLabel("No task has a provider yet. Add a key in Settings, or "
+                                 "install a local engine from the Model Hub.")
+        self.empty_note.setObjectName("subtle")
+        self.empty_note.setWordWrap(True)
+        self.empty_note.hide()
+        layout.addWidget(self.empty_note)
+        layout.addStretch(1)
+        self.flow.add_page(centred_page(task_page, 1080))
 
-        target = Card("What to make")
-        row = QHBoxLayout()
-        self.capability_box = QComboBox()
-        self.capability_box.currentIndexChanged.connect(self._reload_providers)
+        # ---- step 2: provider and model -----------------------------------------------
+        model_page = QWidget()
+        layout = QVBoxLayout(model_page)
+        layout.setSpacing(theme.SPACE_3)
+        self.task_heading = QLabel("")
+        self.task_heading.setObjectName("h2")
+        layout.addWidget(self.task_heading)
+        model_card = Card("Model")
+        form = QFormLayout()
+        form.setHorizontalSpacing(theme.SPACE_4)
         self.provider_box = QComboBox()
         self.provider_box.currentIndexChanged.connect(self._reload_models)
+        form.addRow("Provider", self.provider_box)
         self.model_box = QComboBox()
         self.model_box.currentIndexChanged.connect(self._reload_options)
-        row.addWidget(QLabel("Task"))
-        row.addWidget(self.capability_box, 1)
-        row.addWidget(QLabel("Provider"))
-        row.addWidget(self.provider_box, 1)
-        target.body.addLayout(row)
-
-        self.free_only = QCheckBox("Free only — no API key needed")
-        self.free_only.setToolTip(
+        form.addRow("Model", self.model_box)
+        model_card.body.addLayout(form)
+        self.local_only = QCheckBox("Only what runs without an API key")
+        self.local_only.setToolTip(
             "Shows only what runs on your own machine: local ComfyUI graphs and the "
             "local engines from the Model Hub."
         )
-        self.free_only.toggled.connect(self._reload_providers)
-        target.body.addWidget(self.free_only)
+        self.local_only.toggled.connect(self._reload_providers)
+        model_card.body.addWidget(self.local_only)
         self.model_note = QLabel("")
         self.model_note.setWordWrap(True)
         self.model_note.setObjectName("subtle")
-        target.body.addWidget(self.model_box)
-        target.body.addWidget(self.model_note)
-        form_layout.addWidget(target)
+        model_card.body.addWidget(self.model_note)
+        self.credential_label = QLabel("")
+        self.credential_label.setWordWrap(True)
+        model_card.body.addWidget(self.credential_label)
+        key_row = QHBoxLayout()
+        self.key_button = QPushButton("Add a key")
+        self.key_button.setObjectName("tonal")
+        icons.button(self.key_button, "settings", "@ACCENT")
+        self.key_button.clicked.connect(self.open_settings.emit)
+        self.key_button.hide()
+        key_row.addWidget(self.key_button)
+        key_row.addStretch(1)
+        model_card.body.addLayout(key_row)
+        layout.addWidget(model_card)
+        layout.addStretch(1)
+        self.flow.add_page(centred_page(model_page, 760))
 
-        prompt_card = Card("Prompt")
+        # ---- step 3: prompt, references, options --------------------------------------
+        prompt_page = QWidget()
+        layout = QVBoxLayout(prompt_page)
+        layout.setSpacing(theme.SPACE_3)
+        self.prompt_card = Card("Prompt")
         self.prompt_box = QTextEdit()
         self.prompt_box.setPlaceholderText(
             "Describe the shot: subject, action, setting, lighting, lens, camera move, mood."
         )
-        self.prompt_box.setMinimumHeight(120)
+        self.prompt_box.setMinimumHeight(110)
+        self.prompt_box.textChanged.connect(lambda: self._step_changed(self.flow.current()))
+        self.prompt_card.body.addWidget(self.prompt_box)
         self.negative_box = QTextEdit()
-        self.negative_box.setPlaceholderText("Negative prompt (what to avoid) -- optional")
-        self.negative_box.setMaximumHeight(60)
-        prompt_card.body.addWidget(self.prompt_box)
-        prompt_card.body.addWidget(self.negative_box)
-        form_layout.addWidget(prompt_card)
+        self.negative_box.setPlaceholderText("What to avoid (optional)")
+        self.negative_box.setMaximumHeight(56)
+        self.prompt_card.body.addWidget(self.negative_box)
+        layout.addWidget(self.prompt_card)
 
-        self.reference_card = Card("References")
+        self.reference_card = Card("Reference files")
         reference_row = QHBoxLayout()
-        add_images = QPushButton("Add image refs")
-        add_images.clicked.connect(self._add_reference_images)
-        add_media = QPushButton("Set video/audio input")
-        add_media.clicked.connect(self._add_reference_media)
-        use_selection = QPushButton("Use library selection")
-        use_selection.clicked.connect(self.use_library_selection)
-        clear_refs = QPushButton("Clear")
-        clear_refs.clicked.connect(self._clear_references)
-        for button in (add_images, add_media, use_selection, clear_refs):
+        reference_row.setSpacing(theme.SPACE_2)
+        for label, glyph, slot, tip in (
+            ("Images", "image", self._add_reference_images, "Add reference images"),
+            ("Video or audio", "video", self._add_reference_media, "Set the video or audio input"),
+            ("From Library", "library", self.use_library_selection,
+             "Use what is selected in the Library"),
+        ):
+            button = QPushButton(label)
+            button.setObjectName("tonal")
+            button.setToolTip(tip)
+            icons.button(button, glyph, "@ACCENT")
+            button.clicked.connect(slot)
             reference_row.addWidget(button)
+        reference_row.addStretch(1)
+        clear_refs = QPushButton()
+        clear_refs.setObjectName("iconButton")
+        clear_refs.setToolTip("Remove all reference files")
+        icons.button(clear_refs, "clear")
+        clear_refs.clicked.connect(self._clear_references)
+        reference_row.addWidget(clear_refs)
         self.reference_card.body.addLayout(reference_row)
         self.reference_list = QListWidget()
-        self.reference_list.setMaximumHeight(90)
+        self.reference_list.setMaximumHeight(96)
         self.reference_card.body.addWidget(self.reference_list)
-        form_layout.addWidget(self.reference_card)
+        layout.addWidget(self.reference_card)
 
-        options_card = Card("Model options")
+        options_card = Card("Options")
         self.options_form = OptionsForm()
         options_card.body.addWidget(self.options_form)
-        seed_row = QHBoxLayout()
-        seed_row.addWidget(QLabel("Seed (-1 = random)"))
+        layout.addWidget(options_card)
+        # Its own card: the model's options are rebuilt per model, and two forms in one
+        # card align their fields on different columns.
+        variations_card = Card("Variations")
+        extra = QFormLayout()
+        extra.setHorizontalSpacing(theme.SPACE_4)
         self.seed_box = QSpinBox()
         self.seed_box.setRange(-1, 2_147_483_647)
         self.seed_box.setValue(-1)
-        seed_row.addWidget(self.seed_box, 1)
-        seed_row.addWidget(QLabel("Batch"))
+        self.seed_box.setSpecialValueText("Random")
+        self.seed_box.setToolTip("The same seed with the same prompt gives the same result.")
+        extra.addRow("Seed", self.seed_box)
         self.batch_box = QSpinBox()
         self.batch_box.setRange(1, 20)
         self.batch_box.setValue(1)
-        seed_row.addWidget(self.batch_box)
-        options_card.body.addLayout(seed_row)
-        form_layout.addWidget(options_card)
+        self.batch_box.setToolTip("How many variations to make. Each one is a separate job.")
+        extra.addRow("How many", self.batch_box)
+        variations_card.body.addLayout(extra)
+        layout.addWidget(variations_card)
+        layout.addStretch(1)
+        self.flow.add_page(centred_page(prompt_page, 820))
 
-        action_row = QHBoxLayout()
-        self.generate_button = QPushButton("Generate")
-        self.generate_button.setObjectName("primary")
-        self.generate_button.clicked.connect(self.generate)
-        self.credential_label = QLabel("")
-        self.credential_label.setWordWrap(True)
-        action_row.addWidget(self.generate_button)
-        action_row.addWidget(self.credential_label, 1)
-        form_layout.addLayout(action_row)
-        form_layout.addStretch(1)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(form_host)
-        splitter.addWidget(scroll)
-
-        # -- right: results -----------------------------------------------------------
-        results_host = QWidget()
-        results_layout = QVBoxLayout(results_host)
-        results_layout.addWidget(QLabel("Results"))
+        # ---- step 4: results ----------------------------------------------------------
+        result_page = QWidget()
+        layout = QVBoxLayout(result_page)
+        layout.setSpacing(theme.SPACE_3)
+        self.job_card = JobStatusCard("Progress")
+        self.job_card.cancel_requested.connect(self.context.jobs.cancel)
+        layout.addWidget(self.job_card)
+        results_row = QHBoxLayout()
+        results_row.setSpacing(theme.SPACE_3)
         self.result_list = QListWidget()
-        self.result_list.currentTextChanged.connect(self._preview_result)
-        results_layout.addWidget(self.result_list, 1)
+        self.result_list.setMaximumWidth(280)
+        self.result_list.currentItemChanged.connect(self._preview_result)
+        results_row.addWidget(self.result_list)
         self.preview = MediaPreview()
-        results_layout.addWidget(self.preview, 2)
+        self.preview.setMinimumHeight(300)
+        results_row.addWidget(self.preview, 1)
+        layout.addLayout(results_row, 1)
         self.text_output = QTextEdit()
         self.text_output.setReadOnly(True)
-        self.text_output.setPlaceholderText("Text output from LLM / transcription tasks")
-        results_layout.addWidget(self.text_output, 1)
-        splitter.addWidget(results_host)
+        self.text_output.setPlaceholderText("Text answers and transcripts appear here")
+        self.text_output.setMaximumHeight(160)
+        self.text_output.hide()
+        layout.addWidget(self.text_output)
+        self.flow.add_page(centred_page(result_page, 1080))
 
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        scroll.setMinimumWidth(400)
-        results_host.setMinimumWidth(340)
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(8)
-        outer.addWidget(splitter)
+        outer.addWidget(self.flow, 1)
+        self.flow.step_changed.connect(self._step_changed)
+        self.flow.finished.connect(self.generate)
+        self.flow.go_to(STEP_TASK)
+
+    def _step_changed(self, index: int) -> None:
+        capability = self._capability()
+        if index == STEP_TASK:
+            self.flow.set_status(f"Selected: {capability.label}" if capability
+                                 else "Choose what to make.")
+            self.flow.set_next_enabled(capability is not None)
+        elif index == STEP_MODEL:
+            self.flow.set_status("")
+            self.flow.set_next_enabled(self.model_box.currentData() is not None)
+        elif index == STEP_PROMPT:
+            missing = self._missing_input()
+            self.flow.set_status(missing)
+            self.flow.set_next_enabled(not missing)
+        else:
+            missing = self._missing_input()
+            self.flow.set_status(missing or "Press Generate to start.")
+            self.flow.set_next_enabled(not missing)
 
     def _capability(self) -> Capability | None:
         """Qt stores the str-backed enum as a bare string; rebuild the real member.
@@ -181,31 +280,47 @@ class GeneratePanel(QWidget):
         This matters beyond cosmetics: Enum hashes by name, so a plain "image_edit"
         would silently miss a `capability in NEEDS_IMAGE` test.
         """
-        raw = self.capability_box.currentData()
+        raw = self.tiles.current()
         return availability.as_capability(raw) if raw else None
+
+    def _missing_input(self) -> str:
+        """What still has to be supplied before Generate can work, or ''."""
+        capability = self._capability()
+        if capability is None:
+            return "Choose a task first."
+        if self.model_box.currentData() is None:
+            return "Choose a model first."
+        if capability not in PROMPT_OPTIONAL and not self.prompt_box.toPlainText().strip():
+            return "Write a prompt."
+        if capability in NEEDS_IMAGE and not self._reference_images:
+            return f"{capability.label} needs at least one reference image."
+        if capability in NEEDS_MEDIA and not (self._reference_media or self._reference_images):
+            return f"{capability.label} needs a video, audio or image input."
+        return ""
 
     # -- cascading selectors -----------------------------------------------------------
     def _reload_capabilities(self) -> None:
-        current = self.capability_box.currentData()
-        self.capability_box.blockSignals(True)
-        self.capability_box.clear()
-        for capability in CAPABILITY_ORDER:
-            if self.context.registry.for_capability(capability):
-                self.capability_box.addItem(capability.label, capability)
-        if current:
-            index = self.capability_box.findData(current)
-            if index >= 0:
-                self.capability_box.setCurrentIndex(index)
-        self.capability_box.blockSignals(False)
+        offered = [cap.value for _, entries in TASK_GROUPS for cap, _, _ in entries
+                   if self.context.registry.for_capability(cap)]
+        self.tiles.set_available(offered)
+        self.empty_note.setVisible(not offered)
+        if self.tiles.current() not in offered and offered:
+            self.tiles.select(offered[0])
         self._reload_providers()
+
+    def _on_task_chosen(self, _value: str) -> None:
+        self._reload_providers()
+        self.flow.go_to(STEP_MODEL)
 
     def _reload_providers(self) -> None:
         capability = self._capability()
+        if capability is not None:
+            self.task_heading.setText(capability.label)
         entries = []
         if capability:
             for provider in self.context.registry.for_capability(capability):
                 state = availability.provider_availability(provider)
-                if self.free_only.isChecked() and state.state is not availability.State.FREE:
+                if self.local_only.isChecked() and state.state is not availability.State.FREE:
                     continue
                 entries.append((provider.name, provider.key, state))
         availability.decorate_combo(self.provider_box, entries)
@@ -222,31 +337,34 @@ class GeneratePanel(QWidget):
                 state = availability.model_availability(
                     self.context.registry, provider.key, spec.id, capability
                 )
-                if self.free_only.isChecked() and state.state is not availability.State.FREE:
+                if self.local_only.isChecked() and state.state is not availability.State.FREE:
                     continue
                 entries.append((spec.label, spec.id, state))
         usable = availability.decorate_combo(self.model_box, entries)
+        self.key_button.setVisible(bool(entries) and usable < 0)
 
         if not entries:
-            self.credential_label.setText(
-                "Nothing here yet. Turn off 'Free only', or add an API key in Settings."
-                if self.free_only.isChecked() else "No models for this task."
-            )
-            self.credential_label.setObjectName("subtle")
+            self._set_credential_note(
+                "Nothing here yet. Untick 'Only what runs without an API key', or add a key "
+                "in Settings." if self.local_only.isChecked() else "No models for this task.",
+                "subtle")
         elif usable < 0:
             names = sorted({name for _, _, state in entries for name in state.needs})
-            self.credential_label.setText(
-                "Every model here is locked. Add a key for " + (" or ".join(names[:3]) or "a backend")
-                + " in Settings — or tick 'Free only' to see what runs with no key."
-            )
-            self.credential_label.setObjectName("warnText")
+            self._set_credential_note(
+                "Every model here needs a key. Add one for "
+                + (" or ".join(names[:3]) or "a backend")
+                + " in Settings, or tick 'Only what runs without an API key'.", "warnText")
         else:
             state = entries[usable][2] if usable < len(entries) else None
-            self.credential_label.setText(state.reason if state else "")
-            colour = theme.FREE if (state and state.state is availability.State.FREE) else theme.TEXT_MUTED
-            self.credential_label.setStyleSheet(f"color:{colour};")
+            self._set_credential_note(state.reason if state else "", "subtle")
 
         self._reload_options()
+
+    def _set_credential_note(self, text: str, style: str) -> None:
+        self.credential_label.setText(text)
+        self.credential_label.setObjectName(style)
+        self.credential_label.style().unpolish(self.credential_label)
+        self.credential_label.style().polish(self.credential_label)
 
     def _reload_options(self) -> None:
         provider_key = self.provider_box.currentData()
@@ -257,11 +375,14 @@ class GeneratePanel(QWidget):
         self.model_note.setText(spec.notes if spec else "")
 
         capability = self._capability()
-        needs_reference = capability in NEEDS_IMAGE or capability in NEEDS_MEDIA
-        self.reference_card.setVisible(True)
-        self.reference_card.setEnabled(True)
-        if needs_reference and not (self._reference_images or self._reference_media):
-            self.status.emit(f"{capability.label} needs a reference file")
+        takes_files = capability in NEEDS_IMAGE or capability in NEEDS_MEDIA or (
+            capability in PROMPT_OPTIONAL)
+        self.reference_card.setVisible(bool(capability) and (
+            takes_files or capability in {Capability.VIDEO_EXTEND, Capability.LIP_SYNC,
+                                          Capability.MOTION_TRANSFER}))
+        self.negative_box.setVisible(capability in TAKES_NEGATIVE)
+        self.prompt_card.setVisible(capability not in {Capability.SEPARATE_AUDIO})
+        self._step_changed(self.flow.current())
 
     # -- references ---------------------------------------------------------------------
     def _add_reference_images(self) -> None:
@@ -301,74 +422,75 @@ class GeneratePanel(QWidget):
     def _refresh_reference_list(self) -> None:
         self.reference_list.clear()
         for path in self._reference_images:
-            self.reference_list.addItem(f"image: {path.name}")
+            self.reference_list.addItem(QListWidgetItem(icons.icon("image"), path.name))
         if self._reference_media:
-            self.reference_list.addItem(f"media: {self._reference_media.name}")
+            glyph = "sound" if self._reference_media.suffix.lower() in AUDIO_SUFFIXES else "video"
+            self.reference_list.addItem(QListWidgetItem(icons.icon(glyph),
+                                                        self._reference_media.name))
+        self._step_changed(self.flow.current())
 
     # -- run ------------------------------------------------------------------------------
     def generate(self) -> None:
         if self.context.project is None:
             QMessageBox.information(self, "No project", "Create or open a project first.")
             return
+        missing = self._missing_input()
+        if missing:
+            QMessageBox.information(self, "Not ready", missing)
+            self.flow.go_to(STEP_TASK if self._capability() is None
+                            else STEP_MODEL if self.model_box.currentData() is None
+                            else STEP_PROMPT)
+            return
         capability = self._capability()
         provider_key = self.provider_box.currentData()
         model_id = self.model_box.currentData()
-        if not (capability and provider_key and model_id):
-            QMessageBox.information(self, "Nothing selected", "Pick a task, provider and model.")
-            return
 
         state = availability.model_availability(
             self.context.registry, provider_key, model_id, capability
         )
         if not state.usable:
             QMessageBox.warning(
-                self, "This model is locked",
-                f"{state.reason}\n\nAdd the key in Settings, or tick 'Free only' to see "
-                f"what runs with no key at all.",
+                self, "This model needs a key",
+                f"{state.reason}\n\nAdd the key in Settings, or tick 'Only what runs "
+                f"without an API key' to see what runs with no key at all.",
             )
-            return
-
-        prompt = self.prompt_box.toPlainText().strip()
-        if not prompt and capability not in (Capability.TRANSCRIBE, Capability.UPSCALE):
-            QMessageBox.information(self, "Empty prompt", "Write a prompt first.")
-            return
-        if capability in NEEDS_IMAGE and not self._reference_images:
-            QMessageBox.information(
-                self, "Reference needed", f"{capability.label} needs at least one reference image."
-            )
-            return
-        if capability in NEEDS_MEDIA and not (self._reference_media or self._reference_images):
-            QMessageBox.information(
-                self, "Input needed", f"{capability.label} needs a video or audio input."
-            )
+            self.flow.go_to(STEP_MODEL)
             return
 
         project = self.context.require_project()
         seed = self.seed_box.value()
-        options = self.options_form.values()
-        batch = self.batch_box.value()
-
+        media = self._reference_media
+        is_audio = bool(media and media.suffix.lower() in AUDIO_SUFFIXES)
         request_template = GenerationRequest(
-            capability=capability, model_id=model_id, prompt=prompt,
-            negative_prompt=self.negative_box.toPlainText().strip(),
+            capability=capability, model_id=model_id,
+            prompt=self.prompt_box.toPlainText().strip(),
+            negative_prompt=(self.negative_box.toPlainText().strip()
+                             if capability in TAKES_NEGATIVE else ""),
             reference_images=list(self._reference_images),
-            reference_video=self._reference_media if self._reference_media
-            and self._reference_media.suffix.lower() not in {".mp3", ".wav", ".m4a"} else None,
-            audio_input=self._reference_media if self._reference_media
-            and self._reference_media.suffix.lower() in {".mp3", ".wav", ".m4a"} else None,
-            options=options, output_dir=project.media_dir,
+            reference_video=media if media and not is_audio else None,
+            audio_input=media if is_audio else None,
+            options=self.options_form.values(), output_dir=project.media_dir,
             seed=None if seed < 0 else seed,
         )
 
+        batch = self.batch_box.value()
+        self.flow.go_to(STEP_RESULT)
+        last_job = None
         for index in range(batch):
-            self._submit_one(provider_key, request_template, index, batch)
+            last_job = self._submit_one(provider_key, request_template, index, batch)
+        if last_job is not None:
+            summary = (f"<b>{capability.label}</b> with <b>{model_id}</b>"
+                       + (f" — {batch} variations, results appear below as each finishes"
+                          if batch > 1 else ""))
+            self.job_card.track(last_job.id, summary)
+        self.flow.set_status("")
 
-    def _submit_one(self, provider_key: str, template: GenerationRequest, index: int, batch: int) -> None:
+    def _submit_one(self, provider_key: str, template: GenerationRequest, index: int,
+                    batch: int) -> Job:
         context = self.context
         project = context.require_project()
 
         # A fresh copy per job: seeds and outputs must not be shared across batch items.
-        import copy
         request = copy.deepcopy(template)
         if request.seed is not None:
             request.seed += index
@@ -400,18 +522,41 @@ class GeneratePanel(QWidget):
 
         label = template.model_id if batch == 1 else f"{template.model_id} [{index + 1}/{batch}]"
         job = context.jobs.submit(f"Generate: {label}", work, category="generate")
+        self._job_ids.add(job.id)
         self.status.emit(f"Job {job.id} queued: {label}")
+        return job
 
     # -- results ---------------------------------------------------------------------------
+    def on_job_update(self, job: Job) -> bool:
+        """A job this panel started reports here. Returns False for anyone else's job
+        (the assistant can generate too), which the main window then handles as before."""
+        if job.id not in self._job_ids:
+            return False
+        self.job_card.show_job(job)
+        if job.state == JobState.DONE and isinstance(job.result, GenerationResult):
+            self.show_result(job.result)
+        elif job.state == JobState.FAILED and job.id != self.job_card.job_id:
+            self.status.emit(f"A variation failed: {job.error.strip().splitlines()[-1][:160]}"
+                             if job.error.strip() else "A variation failed.")
+        if job.state in (JobState.DONE, JobState.FAILED, JobState.CANCELLED):
+            self._job_ids.discard(job.id)
+        return True
+
     def show_result(self, result: GenerationResult) -> None:
         for path in result.files:
-            self.result_list.addItem(str(path))
+            glyph = "image" if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} else (
+                "sound" if path.suffix.lower() in AUDIO_SUFFIXES else "video")
+            item = QListWidgetItem(icons.icon(glyph), path.name)
+            item.setData(Qt.ItemDataRole.UserRole, str(path))
+            item.setToolTip(str(path))
+            self.result_list.addItem(item)
         if result.files:
             self.result_list.setCurrentRow(self.result_list.count() - 1)
         if result.text:
             self.text_output.setPlainText(result.text)
+            self.text_output.show()
         self.library_changed.emit()
 
-    def _preview_result(self, text: str) -> None:
-        if text:
-            self.preview.show_path(Path(text))
+    def _preview_result(self, item: QListWidgetItem | None, _previous=None) -> None:
+        if item is not None:
+            self.preview.show_path(Path(item.data(Qt.ItemDataRole.UserRole)))

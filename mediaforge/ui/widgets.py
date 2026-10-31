@@ -408,13 +408,15 @@ class TileGrid(QWidget):
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._tiles: dict[str, QToolButton] = {}
-        self._sections: list[tuple[QGridLayout, list[QToolButton]]] = []
+        self._sections: list[tuple[QLabel | None, QGridLayout, list[QToolButton]]] = []
+        self._hidden: set[str] = set()
         self._columns = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(theme.SPACE_2)
         for heading, entries in groups:
+            title = None
             if heading:
                 title = QLabel(heading)
                 title.setObjectName("cardTitle")
@@ -437,22 +439,37 @@ class TileGrid(QWidget):
                 self._group.addButton(tile)
                 self._tiles[key] = tile
                 tiles.append(tile)
-            self._sections.append((grid, tiles))
+            self._sections.append((title, grid, tiles))
             layout.addLayout(grid)
             layout.addSpacing(theme.SPACE_2)
         self._reflow(3)
 
-    def _reflow(self, columns: int) -> None:
-        if columns == self._columns:
+    def _reflow(self, columns: int, force: bool = False) -> None:
+        if columns == self._columns and not force:
             return
         self._columns = columns
-        for grid, tiles in self._sections:
+        for title, grid, tiles in self._sections:
             for tile in tiles:
                 grid.removeWidget(tile)
-            for index, tile in enumerate(tiles):
+            shown = [tile for key, tile in self._tiles.items()
+                     if tile in tiles and key not in self._hidden]
+            for tile in tiles:
+                tile.setVisible(tile in shown)
+            for index, tile in enumerate(shown):
                 grid.addWidget(tile, index // columns, index % columns)
             for column in range(6):
                 grid.setColumnStretch(column, 1 if column < columns else 0)
+            if title is not None:
+                title.setVisible(bool(shown))
+
+    def set_available(self, keys) -> None:
+        """Shows only these tiles; a group left empty loses its heading too."""
+        available = set(keys)
+        self._hidden = set(self._tiles) - available
+        self._reflow(self._columns or 3, force=True)
+
+    def keys(self) -> list[str]:
+        return [key for key in self._tiles if key not in self._hidden]
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
