@@ -50,6 +50,7 @@ GLYPHS: dict[str, str] = {
     "export": "", "video": "", "sliders": "", "chat": "",
     "list": "", "stopwatch": "", "monitor": "",
     "box": "", "box-checked": "",
+    "send": "", "heart": "", "copy": "", "link": "",
 }
 
 
@@ -117,3 +118,48 @@ def repaint_tree(root) -> int:
     from PySide6.QtWidgets import QWidget
 
     return sum(1 for widget in [root] + root.findChildren(QWidget) if repaint(widget))
+
+
+# Labels that mean the same thing on every screen, and the glyph that says it. Applied once
+# to the finished window, so a verb looks the same wherever it appears without each panel
+# repeating the choice -- and a button that already has its own icon is left alone.
+LABEL_GLYPHS: dict[str, str] = {
+    "refresh": "refresh", "re-detect": "refresh", "reload templates": "refresh",
+    "remove": "remove", "forget selected": "remove",
+    "clear": "close", "clear all": "close", "clear chat": "close", "clear finished": "close",
+    "forget everything": "close",
+    "import files": "add", "import folder": "folder", "browse": "folder",
+    "open folder": "folder", "move up": "up", "move down": "down",
+    "show": "eye", "get key": "link", "open source page": "link",
+    "open repository / model page": "link",
+    "send to edit": "edit", "add to timeline": "timeline", "favourite": "heart",
+    "search": "search", "download": "download", "download and use in my video": "download",
+    "install with winget": "download", "copy credit": "copy", "export to json": "export",
+    "cancel selected": "stop", "send": "send", "start ollama": "play",
+    "render timeline": "film", "render with music track": "music",
+    "apply to timeline from library selection": "timeline",
+    "send brief to director": "director", "suggestions": "sparkle",
+}
+
+
+def _label_key(text: str) -> str:
+    return text.replace("&", "").replace("…", "").replace("...", "").strip().lower()
+
+
+def decorate_buttons(root) -> int:
+    """Gives every icon-less button with a known label its standard glyph."""
+    from PySide6.QtWidgets import QAbstractButton
+
+    changed = 0
+    for widget in root.findChildren(QAbstractButton):
+        if not widget.icon().isNull() or widget.property("iconName"):
+            continue
+        glyph = LABEL_GLYPHS.get(_label_key(widget.text()))
+        if glyph is None:
+            continue
+        role = widget.objectName()
+        colour = ("@ON_ACCENT" if role == "primary"
+                  else "@ACCENT" if role in ("ghost", "text", "tonal") else "@TEXT_MUTED")
+        button(widget, glyph, colour)
+        changed += 1
+    return changed

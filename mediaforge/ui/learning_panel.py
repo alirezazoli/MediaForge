@@ -75,6 +75,7 @@ class LearningPanel(QWidget):
         splitter.setHandleWidth(8)
 
         self.table = QTableWidget(0, len(COLUMNS))
+        self.table.verticalHeader().setVisible(False)
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)

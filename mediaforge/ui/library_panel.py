@@ -137,7 +137,8 @@ class LibraryPanel(QWidget):
             if not asset.exists:
                 item.setText(f"[missing] {asset.label}")
             self.list_widget.addItem(item)
-        self.status.emit(f"{len(self._assets)} assets")
+        count = len(self._assets)
+        self.status.emit(f"{count} asset{'' if count == 1 else 's'}")
 
     def current_asset(self) -> Asset | None:
         item = self.list_widget.currentItem()

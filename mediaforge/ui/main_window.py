@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         shortcuts_module.install(self, self.commands)
         self._build_menu()
         self._build_statusbar()
+        icons.decorate_buttons(self)
         self._open_last_or_default()
 
     # -- construction --------------------------------------------------------------------

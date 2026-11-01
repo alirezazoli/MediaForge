@@ -49,6 +49,7 @@ class JobsPanel(QWidget):
         layout.addLayout(toolbar)
 
         self.table = QTableWidget(0, len(COLUMNS))
+        self.table.verticalHeader().setVisible(False)
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)

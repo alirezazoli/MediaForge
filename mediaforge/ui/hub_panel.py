@@ -67,6 +67,7 @@ class HubPanel(QWidget):
 
         splitter.setHandleWidth(8)
         self.model_table = QTableWidget(0, len(MODEL_COLUMNS))
+        self.model_table.verticalHeader().setVisible(False)
         self.model_table.setHorizontalHeaderLabels(MODEL_COLUMNS)
         self.model_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.model_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
@@ -132,7 +133,7 @@ class HubPanel(QWidget):
             weights_item.setToolTip(openness_colour(openness))
             self.model_table.setItem(row, 2, weights_item)
             self.model_table.setItem(
-                row, 3, QTableWidgetItem(", ".join(entry.get("capabilities", [])))
+                row, 3, QTableWidgetItem(_capability_labels(entry.get("capabilities", [])))
             )
             routes = entry.get("routes", [])
             self.model_table.setItem(
@@ -156,7 +157,7 @@ class HubPanel(QWidget):
             f"{entry.get('label', '')}   ({entry.get('vendor', '')})",
             "",
             f"Weights   : {entry.get('openness', 'closed')}",
-            f"Capabilities: {', '.join(entry.get('capabilities', []))}",
+            f"Capabilities: {_capability_labels(entry.get('capabilities', []))}",
         ]
         if entry.get("repo"):
             lines.append(f"Repository: {entry['repo']}")
@@ -200,6 +201,7 @@ class HubPanel(QWidget):
 
         splitter.setHandleWidth(8)
         self.tool_table = QTableWidget(0, len(TOOL_COLUMNS))
+        self.tool_table.verticalHeader().setVisible(False)
         self.tool_table.setHorizontalHeaderLabels(TOOL_COLUMNS)
         self.tool_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tool_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -411,3 +413,16 @@ class HubPanel(QWidget):
     def refresh(self) -> None:
         self._refresh_models()
         self._refresh_tools()
+
+
+def _capability_labels(values: list[str]) -> str:
+    """"Text to video, Image to video" rather than the catalogue's own identifiers."""
+    from ..providers import Capability
+
+    labels = []
+    for value in values:
+        try:
+            labels.append(Capability(value).label)
+        except ValueError:
+            labels.append(value)
+    return ", ".join(labels)

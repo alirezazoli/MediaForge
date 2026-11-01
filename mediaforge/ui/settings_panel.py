@@ -76,7 +76,9 @@ class SettingsPanel(QWidget):
                 )
                 row_layout.addWidget(get_key)
             label = owner.name if owner else slot.replace("_", " ").title()
-            form.addRow(label, row)
+            # A form label with a buddy treats "&" as a shortcut marker and hides it, which
+            # turned "voiceover & SFX" into "voiceover  SFX". Doubled, it shows as typed.
+            form.addRow(label.replace("&", "&&"), row)
         credentials_card.body.addLayout(form)
         layout.addWidget(credentials_card)
 

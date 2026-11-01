@@ -6,12 +6,13 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QLabel,
+    QMessageBox, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .. import ffmpeg_tools
 from ..context import AppContext
+from . import theme
 from .widgets import Card, MediaPreview
 
 COLUMNS = ["#", "Clip", "In", "Out", "Length", "Transition"]
@@ -44,6 +45,7 @@ class TimelinePanel(QWidget):
         layout.addLayout(toolbar)
 
         self.table = QTableWidget(0, len(COLUMNS))
+        self.table.verticalHeader().setVisible(False)
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -54,7 +56,6 @@ class TimelinePanel(QWidget):
         bottom = QHBoxLayout()
 
         render_card = Card("Render settings")
-        settings_row = QHBoxLayout()
         self.width_box = QSpinBox()
         self.width_box.setRange(320, 7680)
         self.width_box.setValue(1920)
@@ -72,14 +73,20 @@ class TimelinePanel(QWidget):
         self.preset_box.addItems(["Custom", "1920x1080 landscape", "1080x1920 vertical",
                                   "1080x1080 square", "3840x2160 4K"])
         self.preset_box.currentTextChanged.connect(self._apply_preset)
-        for label, widget in (
-            ("Preset", self.preset_box), ("Width", self.width_box), ("Height", self.height_box),
-            ("FPS", self.fps_box), ("Crossfade s", self.crossfade_box),
-        ):
-            settings_row.addWidget(QLabel(label))
-            settings_row.addWidget(widget)
-        settings_row.addStretch(1)
-        render_card.body.addLayout(settings_row)
+        self.crossfade_box.setSuffix(" s")
+        # One setting per row: five label-and-field pairs on one line is what truncated
+        # controls to unreadable stubs on narrower windows.
+        settings_form = QFormLayout()
+        settings_form.setHorizontalSpacing(theme.SPACE_4)
+        settings_form.addRow("Frame", self.preset_box)
+        size_row = QHBoxLayout()
+        size_row.addWidget(self.width_box, 1)
+        size_row.addWidget(QLabel("×"))
+        size_row.addWidget(self.height_box, 1)
+        settings_form.addRow("Size", size_row)
+        settings_form.addRow("Frame rate", self.fps_box)
+        settings_form.addRow("Crossfade", self.crossfade_box)
+        render_card.body.addLayout(settings_form)
 
         action_row = QHBoxLayout()
         render_button = QPushButton("Render timeline")

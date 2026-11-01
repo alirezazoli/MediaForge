@@ -107,6 +107,7 @@ class MusicPanel(QWidget):
         splitter.setHandleWidth(8)
 
         self.table = QTableWidget(0, len(COLUMNS))
+        self.table.verticalHeader().setVisible(False)
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)

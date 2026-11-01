@@ -194,7 +194,7 @@ class AgentPanel(QWidget):
                     f"marked [tools] to let it actually do things.", theme.WARNING)
             else:
                 self._set_banner(
-                    f"Ready — {self.agent.chosen_model()} running locally. Free, offline, "
+                    f"Ready — {self.agent.chosen_model()} running locally, offline, "
                     f"and it can operate the app.", theme.FREE)
         else:
             self._set_banner(reason, theme.WARNING)
@@ -209,8 +209,10 @@ class AgentPanel(QWidget):
     def _set_banner(self, text: str, colour: str) -> None:
         self.banner.setText(text)
         self.banner.setStyleSheet(
-            f"background:{colour}18; color:{colour}; border:1px solid {colour}44;"
-            f"border-radius:8px; padding:8px;"
+            # Blended to plain hex: Qt reads "#RRGGBB" + two more digits as #AARRGGBB, which
+            # turned this banner into a maroon band with unreadable text.
+            f"background:{theme.tint(colour, 0.12)}; color:{theme.TEXT};"
+            f"border:1px solid {theme.tint(colour, 0.40)}; border-radius:8px; padding:8px;"
         )
 
     def _model_changed(self) -> None:
