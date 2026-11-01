@@ -90,9 +90,18 @@ def photos(media_dir) -> list[Path]:
 
 @pytest.fixture(scope="session")
 def qapp():
+    from PySide6.QtGui import QFontDatabase
     from PySide6.QtWidgets import QApplication
 
-    return QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication([])
+    # The offscreen platform ships no fonts: text falls back to a face about 2.4x wider
+    # than Segoe UI, so every width a test measured was wrong. Load the real ones.
+    fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+    for name in ("segoeui.ttf", "segoeuib.ttf", "seguisb.ttf", "SegUIVar.ttf",
+                 "SegoeIcons.ttf"):
+        if (fonts / name).exists():
+            QFontDatabase.addApplicationFont(str(fonts / name))
+    return app
 
 
 @pytest.fixture()

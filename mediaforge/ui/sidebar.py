@@ -23,8 +23,7 @@ from __future__ import annotations
 from PySide6.QtCore import QMimeData, Qt, Signal
 from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout,
-    QWidget,
+    QButtonGroup, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from . import icons, theme
@@ -80,7 +79,7 @@ class NavButton(QPushButton):
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAcceptDrops(True)
-        self.setToolTip(label)
+        self.setToolTip(f"{label}\nDrag to reorder")
         self._press_at = None
         self._collapsed = False
         self._apply_text()
@@ -171,6 +170,18 @@ class Sidebar(QWidget):
         self.brand = QLabel("MediaForge")
         self.brand.setObjectName("brand")
         header.addWidget(self.brand, 1)
+        # The theme is one icon in the header. It used to be a "Theme" dropdown and a hint
+        # line under the list, which took the room of two entries and, on a laptop screen,
+        # sat over the bottom of the list.
+        self.mode = mode if mode in theme.MODES else "dark"
+        self.theme_button = QPushButton()
+        self.theme_button.setObjectName("iconButton")
+        self.theme_button.setFixedSize(theme.SIZE_CONTROL, theme.SIZE_CONTROL)
+        self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_button.clicked.connect(
+            lambda: self.theme_changed.emit("light" if self.mode == "dark" else "dark"))
+        header.addWidget(self.theme_button, 0)
+        self.set_mode(self.mode)
         self.collapse_button = QPushButton()   # the glyph is the icon, not the text
         self.collapse_button.setObjectName("iconButton")
         icons.button(self.collapse_button, "menu", size=16)
@@ -186,31 +197,13 @@ class Sidebar(QWidget):
         self._nav_host = QWidget()
         self._nav_area = QVBoxLayout(self._nav_host)
         self._nav_area.setContentsMargins(0, 0, 0, 0)
-        self._nav_area.setSpacing(2)
+        self._nav_area.setSpacing(1)
         scroller = QScrollArea()
         scroller.setWidgetResizable(True)
         scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroller.setFrameShape(QScrollArea.Shape.NoFrame)
         scroller.setWidget(self._nav_host)
         outer.addWidget(scroller, 1)
-
-        self.theme_row_widget = QWidget()
-        theme_row = QHBoxLayout(self.theme_row_widget)
-        theme_row.setContentsMargins(theme.SPACE_2, 0, 0, 0)
-        theme_row.setSpacing(theme.SPACE_2)
-        theme_caption = QLabel("Theme")
-        theme_caption.setObjectName("faint")
-        theme_row.addWidget(theme_caption)
-        self.theme_box = QComboBox()
-        self.theme_box.addItems(["dark", "light"])
-        self.theme_box.setCurrentText(mode if mode in theme.MODES else "dark")
-        self.theme_box.currentTextChanged.connect(self.theme_changed.emit)
-        theme_row.addWidget(self.theme_box, 1)
-        outer.addWidget(self.theme_row_widget)
-
-        self.hint = QLabel("Drag an entry to reorder")
-        self.hint.setObjectName("faint")
-        outer.addWidget(self.hint)
 
         # Kept for the command and the tests that still reference it. Sections replaced
         # what it used to do, so it no longer hides anything.
@@ -303,13 +296,19 @@ class Sidebar(QWidget):
         self.collapsed = collapsed
         self.setFixedWidth(COLLAPSED_WIDTH if collapsed else self.expanded_width)
         self.brand.setVisible(not collapsed)
-        self.theme_row_widget.setVisible(not collapsed)
-        self.hint.setVisible(not collapsed)
+        self.theme_button.setVisible(not collapsed)
         self._apply_visibility()
         self.collapse_button.setToolTip(
             "Show the sidebar (Ctrl+\\)" if collapsed else "Hide the sidebar (Ctrl+\\)"
         )
         self.collapsed_changed.emit(collapsed)
+
+    def set_mode(self, mode: str) -> None:
+        """Shows the theme the button switches TO, the way Windows' own toggles do."""
+        self.mode = mode
+        target = "light" if mode == "dark" else "dark"
+        icons.button(self.theme_button, "sun" if target == "light" else "moon", size=16)
+        self.theme_button.setToolTip(f"Switch to the {target} theme (Ctrl+Shift+T)")
 
     def select(self, key: str) -> None:
         button = self.buttons.get(key)

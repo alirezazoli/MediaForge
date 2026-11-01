@@ -6,13 +6,13 @@ import html
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QSplitter,
     QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame,
-    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider, QSpinBox,
-    QStackedWidget, QTextEdit, QToolButton, QVBoxLayout, QWidget,
+    QGridLayout, QHBoxLayout, QLabel, QLayout, QLineEdit, QPushButton, QSizePolicy, QSlider,
+    QSpinBox, QStackedWidget, QTextEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
 from ..jobs import Job
@@ -378,6 +378,27 @@ def centred_page(inner: QWidget, max_width: int = 980) -> QWidget:
     return page
 
 
+COMBO_MIN_WIDTH = 160
+LONG_LABEL_CHARACTERS = 60
+
+
+def let_text_shrink(root: QWidget) -> None:
+    """Lets text-heavy widgets narrow instead of holding the whole window wide.
+
+    A dropdown asks for the width of its longest entry -- a model name with its provider
+    and status note runs to 750px -- and a label that does not wrap asks for its whole
+    sentence on one line. Qt adds those up into a minimum the window cannot go below, and
+    on a laptop screen it squeezes them over each other instead. Applied once to the
+    finished window, like the button icons.
+    """
+    for combo in root.findChildren(QComboBox):
+        combo.setMinimumWidth(min(combo.minimumSizeHint().width(), COMBO_MIN_WIDTH))
+        combo.view().setMinimumWidth(combo.view().sizeHintForColumn(0) + theme.SPACE_5)
+    for label in root.findChildren(QLabel):
+        if not label.wordWrap() and len(label.text()) > LONG_LABEL_CHARACTERS:
+            label.setWordWrap(True)
+
+
 def show_in_stack(stack: QStackedWidget, widget: QWidget) -> None:
     """Shows one page and sizes the stack to it, not to the tallest page it holds."""
     for index in range(stack.count()):
@@ -415,6 +436,9 @@ class TileGrid(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(theme.SPACE_2)
+        # Without this the layout pins the grid's minimum to however many columns it last
+        # had, and a narrower window squeezes the tiles instead of reflowing them.
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         for heading, entries in groups:
             title = None
             if heading:
@@ -461,6 +485,7 @@ class TileGrid(QWidget):
                 grid.setColumnStretch(column, 1 if column < columns else 0)
             if title is not None:
                 title.setVisible(bool(shown))
+        self.updateGeometry()
 
     def set_available(self, keys) -> None:
         """Shows only these tiles; a group left empty loses its heading too."""
@@ -471,9 +496,21 @@ class TileGrid(QWidget):
     def keys(self) -> list[str]:
         return [key for key in self._tiles if key not in self._hidden]
 
+    def _tile_width(self) -> int:
+        """The widest label decides the column width; a fixed guess squeezed long ones."""
+        widths = [tile.sizeHint().width() for key, tile in self._tiles.items()
+                  if key not in self._hidden]
+        return max([self.TILE_WIDTH] + widths)
+
+    def minimumSizeHint(self) -> QSize:
+        # One column is always possible, so that is all the grid asks of its parent; the
+        # columns it shows follow the width it is actually given.
+        return QSize(self._tile_width(), super().minimumSizeHint().height())
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._reflow(max(1, min(5, self.width() // self.TILE_WIDTH)))
+        spacing = theme.SPACE_2
+        self._reflow(max(1, min(5, (self.width() + spacing) // (self._tile_width() + spacing))))
 
     def select(self, key: str) -> None:
         tile = self._tiles.get(key)

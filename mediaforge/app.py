@@ -12,6 +12,15 @@ import logging
 import sys
 from pathlib import Path
 
+if not __package__:
+    # Started as a file -- `python mediaforge/app.py`, or Run in an editor -- where relative
+    # imports fail before anything is shown. Run the package the way `-m` would instead.
+    import runpy
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    runpy.run_module("mediaforge", run_name="__main__", alter_sys=True)
+    raise SystemExit(0)
+
 from .paths import APP_NAME, __version__
 
 log = logging.getLogger("mediaforge")
@@ -123,7 +132,7 @@ def main() -> int:
         window.activateWindow()
 
     instance.on_activate = bring_to_front
-    window.show()
+    window.show_fitted()
     exit_code = application.exec()
     log.info("Exited with code %s", exit_code)
     return exit_code

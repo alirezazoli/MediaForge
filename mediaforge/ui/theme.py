@@ -74,12 +74,16 @@ def _scheme(light: bool) -> dict[str, str]:
             "surfaceContainerHighest": NEUTRAL[87],
             "onSurface": NEUTRAL[10],
             "onSurfaceVariant": NEUTRAL_VARIANT[30],
+            # Quiet text gets its own tone. It used to borrow `outline`, a border colour
+            # at 4.2:1 on the page -- under the 4.5:1 that small text needs to be read.
+            "onSurfaceFaint": NEUTRAL[40],
             "outline": NEUTRAL_VARIANT[50],
             "outlineVariant": NEUTRAL_VARIANT[80],
             "inverseSurface": NEUTRAL[20], "inverseOnSurface": NEUTRAL[95],
             "success": GREEN[40], "successContainer": GREEN[90],
             "onSuccessContainer": GREEN[10],
-            "warning": YELLOW[40], "warningContainer": YELLOW[90],
+            # Tone 40 amber is 4.0:1 on white; text needs the darker tone.
+            "warning": YELLOW[30], "warningContainer": YELLOW[90],
             "onWarningContainer": YELLOW[10],
             "error": RED[40], "errorContainer": RED[90], "onErrorContainer": RED[10],
             "scrim": NEUTRAL[80], "scrimHover": NEUTRAL[70],
@@ -98,6 +102,7 @@ def _scheme(light: bool) -> dict[str, str]:
         "surfaceContainerHighest": NEUTRAL[22],
         "onSurface": NEUTRAL[90],
         "onSurfaceVariant": NEUTRAL_VARIANT[80],
+        "onSurfaceFaint": NEUTRAL[70],
         "outline": NEUTRAL_VARIANT[60],
         "outlineVariant": NEUTRAL_VARIANT[30],
         "inverseSurface": NEUTRAL[90], "inverseOnSurface": NEUTRAL[20],
@@ -122,7 +127,7 @@ def _with_aliases(scheme: dict[str, str]) -> dict[str, str]:
         "BORDER_SOFT": scheme["outlineVariant"],
         "TEXT": scheme["onSurface"],
         "TEXT_MUTED": scheme["onSurfaceVariant"],
-        "TEXT_FAINT": scheme["outline"],
+        "TEXT_FAINT": scheme["onSurfaceFaint"],
         "ACCENT": scheme["primary"],
         "ACCENT_HOVER": scheme["primaryHover"],
         "ACCENT_DIM": scheme["primaryContainer"],
@@ -160,7 +165,9 @@ RADIUS_SM = SHAPE_SM                # old alias
 # controls they eat the screen and make every screen feel half empty. These are the
 # desktop equivalents: still comfortably clickable, a third less tall.
 SIZE_CONTROL = 32          # a button, an input: one row of interaction
-SIZE_ROW = 36              # a list row, a nav entry
+# A nav entry. At 36 the seventeen entries and their headings were taller than a 150%
+# laptop screen leaves the drawer, and the last one showed cut in half at the bottom.
+SIZE_ROW = 28
 PANE_XS, PANE_SM, PANE_MD, PANE_LG = 240, 320, 400, 560     # column widths
 BOX_SM, BOX_MD, BOX_LG, BOX_XL = 96, 160, 240, 320          # preview and drop areas
 
@@ -258,11 +265,11 @@ QLabel#cardTitle  {{ font-size: 11px; font-weight: 700; color: {p['onSurfaceVari
                      letter-spacing: 0.6px; text-transform: uppercase;
                      padding-bottom: 2px; }}
 QLabel#subtle     {{ color: {p['onSurfaceVariant']}; }}
-QLabel#faint      {{ color: {p['outline']}; font-size: 12px; }}
+QLabel#faint      {{ color: {p['onSurfaceFaint']}; font-size: 12px; }}
 QLabel#okText     {{ color: {p['success']}; }}
 QLabel#warnText   {{ color: {p['warning']}; }}
 QLabel#dangerText {{ color: {p['error']}; }}
-QLabel#mono       {{ color: {p['outline']};
+QLabel#mono       {{ color: {p['onSurfaceFaint']};
                      font-family: "Roboto Mono", Consolas, monospace; font-size: 12px; }}
 QLabel#glyph      {{ font-family: {ICON_FONT}; font-size: 22px;
                      color: {p['onSurfaceVariant']}; }}
@@ -342,8 +349,8 @@ QPushButton#navItem:checked {{
     font-weight: 600;
 }}
 QLabel#navSection {{
-    color: {p['outline']}; font-size: 10px; font-weight: 700;
-    letter-spacing: 1.0px; padding: 10px 10px 2px 10px;
+    color: {p['onSurfaceFaint']}; font-size: 10px; font-weight: 700;
+    letter-spacing: 1.0px; padding: 8px 10px 2px 10px;
 }}
 QLabel#brand {{
     font-family: {FONT_DISPLAY}; font-size: 16px; font-weight: 600;
@@ -384,7 +391,7 @@ QWidget#stepBar {{
 QPushButton#stepDot {{
     background: transparent; border: none; border-radius: {SHAPE_FULL}px;
     padding: 0px 14px; min-height: {SIZE_CONTROL}px;
-    color: {p['outline']}; font-size: 13px; font-weight: 600;
+    color: {p['onSurfaceFaint']}; font-size: 13px; font-weight: 600;
 }}
 QPushButton#stepDot:hover {{ background: {p['surfaceContainerHigh']}; }}
 QPushButton#stepDot[done="true"] {{ color: {p['primary']}; }}
@@ -400,6 +407,8 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit {{
     border-radius: {SHAPE_XS}px;
     padding: 5px 10px; min-height: 20px; min-width: 88px;
     color: {p['onSurface']};
+    /* Qt's default placeholder grey is about 2.8:1 -- the hint text was hard to read. */
+    placeholder-text-color: {p['onSurfaceFaint']};
     selection-background-color: {p['primaryContainer']};
     selection-color: {p['onPrimaryContainer']};
 }}

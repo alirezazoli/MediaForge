@@ -7,8 +7,8 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..context import AppContext
@@ -95,16 +95,18 @@ class LibraryPanel(QWidget):
         self.tags_box.returnPressed.connect(self._save_tags)
         side_layout.addWidget(self.tags_box)
 
-        buttons = QHBoxLayout()
-        for label, handler in (
+        # Two by two: four in a row needed 500px, and the column can be 320.
+        buttons = QGridLayout()
+        buttons.setSpacing(theme.SPACE_2)
+        for index, (label, handler) in enumerate((
             ("Send to Edit", self._send_to_edit),
             ("Add to timeline", self._add_to_timeline),
             ("Favourite", self._toggle_favourite),
             ("Remove", self._remove_selected),
-        ):
+        )):
             button = QPushButton(label)
             button.clicked.connect(handler)
-            buttons.addWidget(button)
+            buttons.addWidget(button, index // 2, index % 2)
         side_layout.addLayout(buttons)
 
         splitter.addWidget(side)

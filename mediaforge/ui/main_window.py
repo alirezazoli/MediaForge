@@ -9,7 +9,7 @@ from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMessageBox, QProgressBar,
-    QStackedWidget, QWidget,
+    QSizePolicy, QStackedWidget, QWidget,
 )
 
 from ..agents import DirectorResult
@@ -38,9 +38,18 @@ from . import sidebar as sidebar_module
 from .sidebar import Sidebar
 from .templates_panel import TemplatesPanel
 from .timeline_panel import TimelinePanel
-from .widgets import JobBridge
+from .widgets import JobBridge, let_text_shrink
 
 # Visual design lives in theme.py so every panel shares one set of tokens.
+
+MINIMUM_WINDOW = (900, 560)
+PREFERRED_WINDOW = (1440, 900)
+# Below this much screen the window opens maximised: on a laptop a floating window a few
+# pixels smaller than the screen is only a worse version of a maximised one.
+MAXIMISE_BELOW = (1440, 860)
+# Under this width the drawer folds to its icon rail on its own, and opens again above
+# the second number -- the gap stops it flickering while the window is dragged.
+AUTO_COLLAPSE_BELOW, AUTO_EXPAND_ABOVE = 1100, 1180
 
 
 class MainWindow(QMainWindow):
@@ -48,11 +57,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.context = context
         self.setWindowTitle("MediaForge Studio")
-        # Three columns whose own minimums add up to about 1280, plus the sidebar. Set
-        # below that and Qt does not shrink them, it clips them -- which is exactly the
-        # "windows inside each other" the layout used to show.
-        self.setMinimumSize(1500, 760)
-        self.resize(1680, 1000)
+        # The window used to insist on 1500x760 -- wider than a 1920x1080 laptop at 150%
+        # scaling, which gives Qt 1280x720. It opened past the screen edge, and every page
+        # is now built to fit that laptop instead (tests/test_fits_screen.py holds it there).
+        self.setMinimumSize(*MINIMUM_WINDOW)
+        self.resize(*PREFERRED_WINDOW)
+        self._sidebar_auto_collapsed = False
         self.setStyleSheet(theme.set_mode(context.settings.theme))
 
         self.bridge = JobBridge()
@@ -65,6 +75,7 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self._build_statusbar()
         icons.decorate_buttons(self)
+        let_text_shrink(self)
         self._open_last_or_default()
 
     # -- construction --------------------------------------------------------------------
@@ -171,8 +182,49 @@ class MainWindow(QMainWindow):
         panel = self.panels.get(key)
         if panel is None:
             return
+        # A stacked widget is as wide as its widest page, shown or not, so one wide screen
+        # used to set the minimum for all of them. Hidden pages ask for no room.
+        for page in self.panels.values():
+            policy = (QSizePolicy.Policy.Preferred if page is panel
+                      else QSizePolicy.Policy.Ignored)
+            page.setSizePolicy(policy, policy)
         self.stack.setCurrentWidget(panel)
+        self.stack.updateGeometry()
         self.sidebar.select(key)
+
+    # -- window size -----------------------------------------------------------------------
+    def fit_to_screen(self) -> bool:
+        """Sizes the window to the screen it is on; True when it should open maximised."""
+        available = self.screen().availableGeometry()
+        self.setMinimumSize(min(MINIMUM_WINDOW[0], available.width()),
+                            min(MINIMUM_WINDOW[1], available.height()))
+        width = min(PREFERRED_WINDOW[0], int(available.width() * 0.92))
+        height = min(PREFERRED_WINDOW[1], int(available.height() * 0.92))
+        self.resize(max(width, self.minimumWidth()), max(height, self.minimumHeight()))
+        frame_extra = self.frameGeometry().size() - self.geometry().size()
+        left = available.x() + (available.width() - self.width() - frame_extra.width()) // 2
+        top = available.y() + (available.height() - self.height() - frame_extra.height()) // 2
+        self.move(max(available.x(), left), max(available.y(), top))
+        return (available.width() < MAXIMISE_BELOW[0]
+                or available.height() < MAXIMISE_BELOW[1])
+
+    def show_fitted(self) -> None:
+        if self.fit_to_screen():
+            self.showMaximized()
+        else:
+            self.show()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if not hasattr(self, "sidebar"):
+            return
+        width = event.size().width()
+        if width < AUTO_COLLAPSE_BELOW and not self.sidebar.collapsed:
+            self._sidebar_auto_collapsed = True
+            self.sidebar.set_collapsed(True)
+        elif width > AUTO_EXPAND_ABOVE and self._sidebar_auto_collapsed:
+            self.sidebar.set_collapsed(False)
+            self._sidebar_auto_collapsed = False
 
     def key_for(self, panel) -> str:
         return next((key for key, value in self.panels.items() if value is panel), "")
@@ -541,9 +593,12 @@ class MainWindow(QMainWindow):
         self._set_status(f"{path.name} set as the music track")
 
     def toggle_sidebar(self) -> None:
+        self._sidebar_auto_collapsed = False
         self.sidebar.set_collapsed(not self.sidebar.collapsed)
 
     def _on_sidebar_collapsed(self, collapsed: bool) -> None:
+        if self._sidebar_auto_collapsed:
+            return  # folded for a narrow window, not the user's choice: don't remember it
         self.context.settings.sidebar_collapsed = collapsed
         self.context.settings.save()
         self._set_status("Sidebar hidden — Ctrl+\\ brings it back"
@@ -563,12 +618,7 @@ class MainWindow(QMainWindow):
     def apply_theme(self, mode: str) -> None:
         """Switches palette live. Panels that set inline colours redraw in refresh()."""
         self.setStyleSheet(theme.set_mode(mode))
-        # Keep the dropdown honest: it showed 'dark' while the window was light
-        # whenever the theme changed from anywhere other than that dropdown.
-        if self.sidebar.theme_box.currentText() != mode:
-            self.sidebar.theme_box.blockSignals(True)
-            self.sidebar.theme_box.setCurrentText(mode)
-            self.sidebar.theme_box.blockSignals(False)
+        self.sidebar.set_mode(mode)
         self.context.settings.theme = mode
         self.context.settings.save()
         for panel in self.panels.values():
@@ -590,9 +640,7 @@ class MainWindow(QMainWindow):
         self._set_status(f"{mode.capitalize()} theme")
 
     def toggle_theme(self) -> None:
-        self.sidebar.theme_box.setCurrentText(
-            "light" if theme.MODE == "dark" else "dark"
-        )
+        self.apply_theme("light" if theme.MODE == "dark" else "dark")
 
     def toggle_fullscreen(self) -> None:
         if self.isFullScreen():

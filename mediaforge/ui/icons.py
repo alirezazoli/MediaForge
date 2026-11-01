@@ -51,6 +51,7 @@ GLYPHS: dict[str, str] = {
     "list": "", "stopwatch": "", "monitor": "",
     "box": "", "box-checked": "",
     "send": "", "heart": "", "copy": "", "link": "",
+    "sun": "", "moon": "",
 }
 
 

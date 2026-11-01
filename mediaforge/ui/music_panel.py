@@ -83,15 +83,21 @@ class MusicPanel(QWidget):
             "Hides non-commercial licences. Tick this if the video is for a client, "
             "a product, or anything that makes money."
         )
-        self.allow_nd = QCheckBox("Include No-Derivatives (cannot legally be used)")
+        self.allow_nd = QCheckBox("Show No-Derivatives (reference only)")
         self.allow_nd.setToolTip(
-            "A soundtrack is an adaptation, so ND-licensed music cannot be put under a "
-            "video. Shown only for reference."
+            "A soundtrack is an adaptation, so ND-licensed music cannot legally be put "
+            "under a video. Shown only for reference."
         )
+        # Licence and sources on rows of their own: on one row they asked for 1070px,
+        # more than a laptop screen leaves beside the sidebar.
+        filter_row.addWidget(QLabel("Licence"))
         filter_row.addWidget(self.commercial_only)
         filter_row.addWidget(self.allow_nd)
         filter_row.addStretch(1)
-        filter_row.addWidget(QLabel("Sources"))
+        layout.addLayout(filter_row)
+
+        source_row = QHBoxLayout()
+        source_row.addWidget(QLabel("Sources"))
         self.source_boxes: dict[str, QCheckBox] = {}
         for source in SOURCES:
             box = QCheckBox(source.name)
@@ -99,8 +105,9 @@ class MusicPanel(QWidget):
             box.setToolTip(f"{source.note}\n{source.homepage}"
                            + ("\nNeeds a free API key." if source.needs_key else ""))
             self.source_boxes[source.key] = box
-            filter_row.addWidget(box)
-        layout.addLayout(filter_row)
+            source_row.addWidget(box)
+        source_row.addStretch(1)
+        layout.addLayout(source_row)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setChildrenCollapsible(False)
