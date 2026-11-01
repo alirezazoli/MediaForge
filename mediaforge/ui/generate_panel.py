@@ -146,7 +146,7 @@ class GeneratePanel(QWidget):
         self.key_button = QPushButton("Add a key")
         self.key_button.setObjectName("tonal")
         icons.button(self.key_button, "settings", "@ACCENT")
-        self.key_button.clicked.connect(self.open_settings.emit)
+        self.key_button.clicked.connect(self._fix_locked_model)
         self.key_button.hide()
         key_row.addWidget(self.key_button)
         key_row.addStretch(1)
@@ -342,6 +342,13 @@ class GeneratePanel(QWidget):
                 entries.append((spec.label, spec.id, state))
         usable = availability.decorate_combo(self.model_box, entries)
         self.key_button.setVisible(bool(entries) and usable < 0)
+        self.key_button.setEnabled(True)
+        # A local engine that is merely stopped needs starting, not a key.
+        self._start_engine = bool(
+            provider is not None and provider.key == "comfyui"
+            and self.context.comfy_install() is not None and not provider.reachable())
+        self.key_button.setText("Start ComfyUI" if self._start_engine else "Add a key")
+        icons.button(self.key_button, "play" if self._start_engine else "settings", "@ACCENT")
 
         if not entries:
             self._set_credential_note(
@@ -359,6 +366,21 @@ class GeneratePanel(QWidget):
             self._set_credential_note(state.reason if state else "", "subtle")
 
         self._reload_options()
+
+    def _fix_locked_model(self) -> None:
+        if not getattr(self, "_start_engine", False):
+            self.open_settings.emit()
+            return
+        context = self.context
+        job = context.jobs.submit(
+            "Start ComfyUI",
+            lambda job_context: context.start_comfyui(
+                lambda fraction, message: job_context.progress(fraction, message),
+                lambda: job_context.cancelled),
+            category="engine")
+        self.key_button.setEnabled(False)
+        self._set_credential_note("Starting ComfyUI… about half a minute.", "subtle")
+        self.status.emit(f"Job {job.id}: starting ComfyUI")
 
     def _set_credential_note(self, text: str, style: str) -> None:
         self.credential_label.setText(text)

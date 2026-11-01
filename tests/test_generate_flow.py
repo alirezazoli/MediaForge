@@ -82,3 +82,17 @@ def test_generate_reports_on_the_result_step(panel, qapp, window):
     path = Path(panel.result_list.item(0).data(gp.Qt.ItemDataRole.UserRole))
     assert path.is_file()
     assert window.stack.currentWidget() is panel
+
+
+def test_a_stopped_comfyui_offers_start_not_a_key(panel, monkeypatch):
+    from mediaforge import comfyserver
+    from mediaforge.providers.comfy_builtin import WAN22_ID
+
+    comfy = panel.context.registry.get("comfyui")
+    monkeypatch.setattr(type(comfy), "reachable", lambda self, force=False: False)
+    monkeypatch.setattr(panel.context, "comfy_install",
+                        lambda: comfyserver.ComfyInstall(Path("."), Path("python.exe"), False))
+    _choose(panel, Capability.IMAGE_TO_VIDEO, "comfyui")
+    assert panel.model_box.findData(WAN22_ID) >= 0
+    assert not panel.key_button.isHidden()
+    assert panel.key_button.text() == "Start ComfyUI"
