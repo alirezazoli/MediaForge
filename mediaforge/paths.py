@@ -14,7 +14,7 @@ from pathlib import Path
 
 APP_NAME = "MediaForge Studio"
 APP_ID = "MediaForge.Studio"          # Windows AppUserModelID; groups taskbar icons
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 
 def is_frozen() -> bool:

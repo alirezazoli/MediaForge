@@ -166,22 +166,23 @@ class Project:
         height: int = 0, fps: float = 0.0, size_bytes: int = 0, thumbnail: str = "",
         source: str = "import", tags: str = "",
     ) -> int:
-        cursor = self.connection.execute(
+        # RETURNING, not lastrowid: when the path is already in the library the upsert
+        # updates instead of inserting, and lastrowid then still holds the id of the last
+        # file inserted -- a different file. Opening a known file showed another one.
+        row = self.connection.execute(
             """INSERT INTO assets(path, kind, label, duration, width, height, fps, size_bytes,
                                   thumbnail, tags, source, created_at)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(path) DO UPDATE SET
                    duration=excluded.duration, width=excluded.width, height=excluded.height,
                    fps=excluded.fps, size_bytes=excluded.size_bytes,
-                   thumbnail=excluded.thumbnail""",
+                   thumbnail=excluded.thumbnail
+               RETURNING id""",
             (str(path), kind, label or path.stem, duration, width, height, fps, size_bytes,
              thumbnail, tags, source, time.time()),
-        )
+        ).fetchone()
         self.connection.commit()
-        if cursor.lastrowid:
-            return int(cursor.lastrowid)
-        row = self.connection.execute("SELECT id FROM assets WHERE path = ?", (str(path),)).fetchone()
-        return int(row["id"])
+        return int(row[0])
 
     def import_file(self, source_path: Path, copy: bool = True) -> Path:
         """Copies into media/ so the project folder stays self-contained."""

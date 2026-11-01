@@ -65,7 +65,7 @@ class AppContext:
     def start_comfyui(self, progress=lambda fraction, message: None,
                       should_cancel=lambda: False) -> str:
         """Starts the local ComfyUI and waits for it to answer. Runs on a job thread."""
-        from .providers import comfy_builtin
+        from .providers import comfy_builtin, comfy_local
         from .runtime import log_dir
 
         install = self.comfy_install()
@@ -87,6 +87,7 @@ class AppContext:
         if comfy is not None:
             comfy.reachable(force=True)
         comfy_builtin._files_cache.clear()
+        comfy_local.clear_cache()
         return f"ComfyUI is running at {url}."
 
     def shutdown(self) -> None:

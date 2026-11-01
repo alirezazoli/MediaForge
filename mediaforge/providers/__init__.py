@@ -16,6 +16,7 @@ from .catalog_provider import CatalogProvider
 from .gateways import ComfyUIProvider, FalProvider, OmniProvider, ReplicateProvider, SeedanceProvider
 from .google import GoogleProvider
 from .ollama import OllamaProvider
+from .windows_speech import WindowsSpeechProvider
 
 PROVIDER_CLASSES: list[type[Provider]] = [
     GoogleProvider,
@@ -28,6 +29,7 @@ PROVIDER_CLASSES: list[type[Provider]] = [
     AnthropicProvider,
     ElevenLabsProvider,
     OpenAICompatibleProvider,
+    WindowsSpeechProvider,
 ]
 
 

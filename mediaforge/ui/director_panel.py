@@ -279,8 +279,10 @@ class DirectorPanel(QWidget):
             (self.video_provider, self.video_model, Capability.TEXT_TO_VIDEO),
             (self.tts_provider, self.tts_model, Capability.TEXT_TO_SPEECH),
         ):
-            entries = [(provider.name, provider.key, availability.provider_availability(provider))
-                       for provider in self.context.registry.for_capability(capability)]
+            registry = self.context.registry
+            entries = [(provider.name, provider.key,
+                        availability.provider_availability_for(registry, provider, capability))
+                       for provider in registry.for_capability(capability)]
             usable = availability.decorate_combo(provider_box, entries)
             if usable >= 0:
                 provider_box.setCurrentIndex(usable)
@@ -288,14 +290,18 @@ class DirectorPanel(QWidget):
 
     def _fill_models(self, provider_box: QComboBox, model_box: QComboBox,
                      capability: Capability) -> None:
-        model_box.clear()
-        provider = self.context.registry.get(provider_box.currentData())
-        if provider:
-            for spec in provider.models_for(capability):
-                model_box.addItem(spec.label, spec.id)
+        registry = self.context.registry
+        provider = registry.get(provider_box.currentData())
+        entries = [(spec.label, spec.id,
+                    availability.model_availability(registry, provider.key, spec.id, capability))
+                   for spec in provider.models_for(capability)] if provider else []
+        usable = availability.decorate_combo(model_box, entries)
+        if usable >= 0:
+            model_box.setCurrentIndex(usable)
         note = getattr(self, "_role_notes", {}).get(capability)
         if note is not None:
-            state = availability.provider_availability(provider) if provider else None
+            state = (availability.provider_availability_for(registry, provider, capability)
+                     if provider else None)
             note.setText(state.reason if state and not state.usable else "")
             note.setVisible(bool(note.text()))
         if hasattr(self, "flow"):

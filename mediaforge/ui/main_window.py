@@ -359,8 +359,9 @@ class MainWindow(QMainWindow):
         if job.category == "music_download":
             if job.state == JobState.DONE and isinstance(job.result, dict):
                 self.music_panel.download_finished(job.result)
-            elif job.state == JobState.FAILED:
-                self.music_panel.footer.setText(f"Download failed: {job.error[:200]}")
+            elif job.state in (JobState.FAILED, JobState.CANCELLED):
+                self.music_panel.compose_button.setEnabled(True)
+                self.music_panel.footer.setText(f"{job.title} failed: {job.error[:200]}")
             self._set_status(f"{job.title}: {job.message}")
             return
         if job.category == "repair_scan":

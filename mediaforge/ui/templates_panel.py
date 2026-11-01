@@ -147,7 +147,10 @@ class TemplatesPanel(QWidget):
                 break
             asset = usable[index]
             seconds = float(slot.get("seconds", 3.0))
-            out_point = min(seconds, asset.duration) if asset.duration else seconds
+            # A photo lasts as long as its slot. (Libraries made before 1.0.1 stored one
+            # frame's 0.04 s as a photo's duration.)
+            out_point = (seconds if asset.kind == "image" or not asset.duration
+                         else min(seconds, asset.duration))
             project.append_clip(asset.id, 0.0, out_point)
             filled += 1
 

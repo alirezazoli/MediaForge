@@ -150,7 +150,9 @@ class OptionsForm(QWidget):
             widget = QTextEdit()
             widget.setPlainText(str(default or ""))
             widget.setMaximumHeight(90)
-            widget.setPlaceholderText('{"key": "value"} -- merged into the request payload')
+            json_field = "json" in str(spec.get("label", "")).lower()
+            widget.setPlaceholderText(spec.get("placeholder") or (
+                '{"key": "value"} -- merged into the request payload' if json_field else ""))
             return widget
 
         widget = QLineEdit(str(default or ""))

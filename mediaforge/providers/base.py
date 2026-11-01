@@ -29,6 +29,7 @@ class Capability(str, Enum):
     MATTE = "matte"                      # background removal / rotoscoping
     SEPARATE_AUDIO = "separate_audio"    # stem splitting
     TEXT_TO_SPEECH = "text_to_speech"
+    TEXT_TO_MUSIC = "text_to_music"      # original music from a description (and lyrics)
     TRANSCRIBE = "transcribe"
     LLM = "llm"                          # scriptwriting / shotlisting / captions
     VIDEO_UNDERSTANDING = "video_understanding"
@@ -53,6 +54,7 @@ _CAPABILITY_LABELS = {
     Capability.MATTE: "Remove background",
     Capability.SEPARATE_AUDIO: "Separate audio stems",
     Capability.TEXT_TO_SPEECH: "Text to speech",
+    Capability.TEXT_TO_MUSIC: "Text to music",
     Capability.TRANSCRIBE: "Transcribe",
     Capability.LLM: "Text / scripting",
     Capability.VIDEO_UNDERSTANDING: "Video understanding",

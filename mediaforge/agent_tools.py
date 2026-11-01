@@ -16,6 +16,8 @@ from .ffmpeg_tools import IMAGE_SUFFIXES
 from .photofilm import ALL_MOVES, ASPECTS, TRANSFORMS
 from .providers import Capability
 
+KIND_WORDS = {"image": "photo", "video": "video", "audio": "audio file"}
+
 
 def build_tools(context, photo_panel) -> list[Tool]:
     """Binds tools to the live AppContext and the Photos-to-video panel."""
@@ -204,7 +206,16 @@ def build_tools(context, photo_panel) -> list[Tool]:
         if project is None:
             return {"error": "No project is open."}
         assets = project.assets(kind=kind)
-        return {"count": len(assets), "assets": [
+        by_kind: dict[str, int] = {}
+        for asset in assets:
+            by_kind[asset.kind] = by_kind.get(asset.kind, 0) + 1
+        # The tally comes first and in words: given only the list, an 8B local model
+        # counted 51 "videos" in a library of photos, clips and audio.
+        return {"count": len(assets), "by_kind": by_kind,
+                "summary": ", ".join(
+                    f"{count} {KIND_WORDS.get(name, name)}{'s' if count != 1 else ''}"
+                    for name, count in sorted(by_kind.items())),
+                "assets": [
             {"name": asset.label, "kind": asset.kind, "resolution": asset.resolution,
              "seconds": round(asset.duration, 2), "path": str(asset.path)}
             for asset in assets[:40]

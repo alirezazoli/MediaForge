@@ -158,6 +158,32 @@ def model_availability(
     return provider_availability(provider)
 
 
+def _rank(state: Availability) -> int:
+    if state.state is State.FREE and state.unattended:
+        return 0
+    if state.state is State.READY:
+        return 1
+    return 2 if state.usable else 3
+
+
+def provider_availability_for(registry: Registry, provider: Provider,
+                              capability: Capability | str) -> Availability:
+    """How usable a provider is for one task: the best of its models for that task.
+
+    The provider alone is the wrong question. The catalogue needs no key itself, so it read
+    as ready and was picked first for stills -- and then every model in it needed a key.
+    """
+    capability = as_capability(capability)
+    best: Availability | None = None
+    for spec in provider.models_for(capability):
+        state = model_availability(registry, provider.key, spec.id, capability)
+        if best is None or _rank(state) < _rank(best):
+            best = state
+        if _rank(best) == 0:
+            break
+    return best or provider_availability(provider)
+
+
 def comfyui_availability(provider: Provider, endpoint: str) -> Availability:
     """A built-in graph is ready when its files are; a workflow needs one picked by hand."""
     status = getattr(provider, "builtin_status", None)

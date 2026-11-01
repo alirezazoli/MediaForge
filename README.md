@@ -47,7 +47,8 @@ move, and every job reports its progress on the screen that started it.
 | Generate | Task → Model → Prompt → Result | Every provider capability; only tasks something can actually run are shown |
 | Director | Brief → Crew → Cut → Result | Writes a shot list, makes stills and clips, narrates, assembles |
 
-Also: Library, Timeline, Templates, Find music (licence-checked), Model Hub, Assistant
+Also: Library, Timeline, Templates, Find music (licence-checked search, or compose an
+original track on this PC with ACE-Step), Model Hub, Assistant
 (a local Ollama model that drives the app), Learning, Jobs, Settings. **Ctrl+K** opens the
 command palette; **F1** lists every shortcut.
 
@@ -57,6 +58,26 @@ Each model in a dropdown says up front whether it will run: nothing appended mea
 configured key covers it, **no key** means it runs without one, **needs a key** means it
 is disabled and its tooltip names the key that would unlock it. "Only what runs without
 an API key" on the Generate screen hides the rest.
+
+### Built in: models MediaForge runs on your PC by itself
+
+If these are already on the machine, MediaForge finds them and uses them with no key, no
+workflow to export and nothing to configure. ComfyUI is started for you when it is
+stopped; each model is found by asking ComfyUI which files it can load.
+
+| Task | Model | Needs | Time on an 8 GB laptop GPU |
+|---|---|---|---|
+| Text to image, image edit | SDXL (any SDXL checkpoint, e.g. Juggernaut XL) | ComfyUI | 30–60 s per image |
+| Text to video, image to video | Wan 2.2 TI2V 5B | ComfyUI | ~80 s Draft, ~4–5 min Standard |
+| Lip sync (a photo speaks an audio track) | Wan 2.2 S2V 14B, GGUF or safetensors | ComfyUI (+ ComfyUI-GGUF) | slow: minutes per second |
+| Text to music, with or without lyrics | ACE-Step 1.5 | ComfyUI | ~1 min for 30 s |
+| Image upscale 4× | Real-ESRGAN x4plus | ComfyUI | 1–2 min |
+| Scripts, shot lists, captions, the Assistant | every model pulled in Ollama, each selectable | Ollama | seconds |
+| Video understanding | Ollama models that read images (Qwen 3.5, Gemma 4…) | Ollama | ~10 s for 6 frames |
+| Text to speech | the voices built into Windows | nothing | instant |
+
+Before a ComfyUI job, MediaForge asks Ollama to release the GPU, so a video render never
+competes with a language model that answered a minute ago.
 
 ### Open models (run locally through ComfyUI)
 
@@ -153,6 +174,18 @@ python -m venv .venv
 The suite drives the real screens and engines on media it generates with ffmpeg. Every
 run uses a throwaway profile and workspace (`MEDIAFORGE_HOME`), and `conftest.py` refuses
 to start if the workspace would be your real one.
+
+### The feature tour
+
+```bash
+.venv\Scripts\python tools\feature_tour.py C:\path\to\tour-output
+```
+
+Runs every screen for real with the models on this PC — every Edit tool, Generate with
+each local model, Photos to video, the Director, Templates, Timeline, Repair, Batch,
+Enhance, Find music, the Assistant — and keeps one output from each. `index.html` in the
+output folder shows them all with their verdicts. It takes about an hour, most of it
+video generation; `--only edit repair` runs just those sections.
 
 ## Build the installer
 

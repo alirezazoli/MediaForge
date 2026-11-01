@@ -60,6 +60,7 @@ class OllamaModel:
     families: tuple[str, ...] = ()
     supports_tools: bool = False
     supports_vision: bool = False
+    supports_thinking: bool = False
     is_cloud: bool = False
 
     @property
@@ -101,15 +102,38 @@ class OllamaProvider(Provider):
         "No key. Install Ollama, then pull a model, e.g.  ollama pull llama3.1:8b"
     )
 
-    models: list[ModelSpec] = [
-        ModelSpec(
-            id="auto",
-            label="Best installed local model",
-            capabilities=[Capability.LLM],
-            notes="Runs entirely on your machine. Free, offline, unlimited.",
-            options={"temperature": {"type": "float", "default": 0.7, "min": 0.0, "max": 2.0}},
-        )
-    ]
+    TEMPERATURE = {"temperature": {"type": "float", "default": 0.7, "min": 0.0, "max": 2.0}}
+
+    @property
+    def models(self) -> list[ModelSpec]:
+        """"Best installed" plus every model pulled on this machine, each by name.
+
+        Only one "auto" entry used to be offered, so a writer who wanted the bigger model
+        for a script, or the small fast one for captions, could not choose. Models that see
+        images also read videos (as frames). Cloud-routed models are left out: they need an
+        Ollama account and a connection, which is not what "local" promises.
+        """
+        installed = [model for model in self.list_models() if not model.is_cloud]
+        sees = any(model.supports_vision for model in installed)
+        specs = [ModelSpec(
+            id="auto", label="Best installed local model",
+            capabilities=[Capability.LLM] + ([Capability.VIDEO_UNDERSTANDING] if sees else []),
+            notes="Runs entirely on your machine: offline, unlimited, no key.",
+            options=dict(self.TEMPERATURE),
+        )]
+        for model in installed:
+            notes = [f"{model.pretty_size} on disk, runs on this PC."]
+            if model.supports_vision:
+                notes.append("Reads images, so it can also describe a video from its frames.")
+            if model.unreliable_tools:
+                notes.append("Writes well, but not reliable for the Assistant's actions.")
+            specs.append(ModelSpec(
+                id=model.name, label=f"{model.name} ({model.pretty_size})",
+                capabilities=[Capability.LLM] + ([Capability.VIDEO_UNDERSTANDING]
+                                                 if model.supports_vision else []),
+                notes=" ".join(notes), options=dict(self.TEMPERATURE),
+            ))
+        return specs
 
     _reach_cache: tuple[float, bool] | None = None
     _model_cache: tuple[float, list[OllamaModel]] | None = None
@@ -233,6 +257,7 @@ class OllamaProvider(Provider):
             if capabilities:
                 model.supports_tools = "tools" in capabilities
                 model.supports_vision = "vision" in capabilities
+                model.supports_thinking = "thinking" in capabilities
                 return
             template = str(info.get("template", "")).lower()
             if ".tools" in template or "tool_calls" in template:
@@ -258,6 +283,23 @@ class OllamaProvider(Provider):
                 local = [m for m in usable if not m.is_cloud]
                 return (local or usable)[0]
         return models[0]
+
+    # Small vision models first: on an 8 GB laptop GPU a 4B model reads six frames in
+    # seconds, while a 12B one spills into system memory.
+    VISION_PREFERENCE = ("qwen3.5", "qwen2.5vl", "gemma4", "gemma3", "llava")
+
+    def best_vision_model(self) -> OllamaModel | None:
+        seeing = [m for m in self.list_models() if m.supports_vision and not m.is_cloud]
+
+        def rank(model: OllamaModel) -> tuple[int, int]:
+            family = next((index for index, needle in enumerate(self.VISION_PREFERENCE)
+                           if needle in model.name.lower()), len(self.VISION_PREFERENCE))
+            return family, model.size_bytes
+
+        return min(seeing, key=rank) if seeing else None
+
+    def _model_info(self, name: str) -> OllamaModel | None:
+        return next((model for model in self.list_models() if model.name == name), None)
 
     def pull(self, name: str, progress: Callable[[float, str], None] = lambda f, m: None) -> bool:
         """Downloads a model, streaming progress. Blocking; run it in a job."""
@@ -287,8 +329,13 @@ class OllamaProvider(Provider):
         temperature: float = 0.7,
         timeout: int = 300,
         should_cancel: Callable[[], bool] | None = None,
+        think: bool | None = None,
     ) -> dict:
-        """One turn. Returns the assistant message dict, including any tool_calls."""
+        """One turn. Returns the assistant message dict, including any tool_calls.
+
+        `think=False` asks a reasoning model to answer straight away. Sent only to models
+        that report thinking; others reject the field.
+        """
         if not self.reachable():
             raise ProviderError(
                 f"Ollama is not running at {self.base_url}. Start it from the Agent "
@@ -311,6 +358,9 @@ class OllamaProvider(Provider):
         }
         if tools:
             body["tools"] = tools
+        info = self._model_info(model)
+        if think is not None and info is not None and info.supports_thinking:
+            body["think"] = think
 
         payload = request_json(
             "POST", f"{self.base_url}/api/chat", json_body=body, timeout=timeout
@@ -329,15 +379,82 @@ class OllamaProvider(Provider):
 
     def generate(self, request, progress=lambda f, m: None, should_cancel=None) -> GenerationResult:
         started = time.time()
+        if request.capability == Capability.VIDEO_UNDERSTANDING:
+            return self._understand(request, progress, should_cancel)
         progress(0.2, "Asking the local model")
         message = self.chat(
             [{"role": "user", "content": request.prompt}],
             model=request.model_id if request.model_id != "auto" else "",
             temperature=float(request.options.get("temperature", 0.7)),
-            should_cancel=should_cancel,
+            should_cancel=should_cancel, think=False,
         )
         progress(1.0, "Done")
         return GenerationResult(
             text=message.get("content", ""), provider=self.key,
             model_id=request.model_id, elapsed_seconds=time.time() - started,
         )
+
+    FRAMES_TO_READ = 6
+
+    def _understand(self, request, progress, should_cancel) -> GenerationResult:
+        """A video, as evenly spaced frames, put to a model that reads images."""
+        import base64
+
+        started = time.time()
+        if request.model_id and request.model_id != "auto":
+            model = request.model_id
+        else:
+            chosen = self.best_vision_model()
+            if chosen is None:
+                raise ProviderError("No installed Ollama model reads images. Pull one, for "
+                                    "example:  ollama pull qwen3.5:4b")
+            model = chosen.name
+        progress(0.1, "Taking frames from the video")
+        if request.reference_video:
+            frames = sample_frames(Path(request.reference_video), self.FRAMES_TO_READ)
+        elif request.reference_images:
+            frames = [Path(path) for path in request.reference_images]
+        else:
+            raise ProviderError("Choose the video (or images) to ask about.")
+        images = [base64.b64encode(path.read_bytes()).decode("ascii") for path in frames]
+        question = request.prompt.strip() or (
+            "Describe what happens in this video: the setting, the subjects, the action and "
+            "how the camera moves.")
+        progress(0.3, f"{model} is watching {len(images)} frames")
+        message = self.chat(
+            [{"role": "user", "content": (
+                f"These are {len(images)} frames taken in order from one video. "
+                f"{question}"), "images": images}],
+            model=model, temperature=float(request.options.get("temperature", 0.3)),
+            should_cancel=should_cancel, think=False, timeout=600,
+        )
+        progress(1.0, "Done")
+        return GenerationResult(
+            text=message.get("content", ""), provider=self.key, model_id=model,
+            elapsed_seconds=time.time() - started, raw={"frames": len(images)},
+        )
+
+
+def sample_frames(video: Path, count: int, width: int = 768) -> list[Path]:
+    """`count` frames spread over the whole clip, as JPEGs in a temporary folder."""
+    import tempfile
+
+    from ..ffmpeg_tools import FfmpegLocator, probe
+
+    locator = FfmpegLocator()
+    locator.require()
+    duration = probe(locator, video).duration or 0.0
+    folder = Path(tempfile.mkdtemp(prefix="mediaforge_frames_"))
+    frames = []
+    for index in range(count):
+        at = duration * (index + 0.5) / count if duration else 0.0
+        target = folder / f"frame_{index:02d}.jpg"
+        subprocess.run(
+            [locator.ffmpeg, "-y", "-v", "error", "-ss", f"{at:.3f}", "-i", str(video),
+             "-frames:v", "1", "-vf", f"scale={width}:-2", "-q:v", "3", str(target)],
+            capture_output=True, creationflags=_NO_WINDOW)
+        if target.exists():
+            frames.append(target)
+    if not frames:
+        raise ProviderError(f"Could not read any frames from {video.name}.")
+    return frames

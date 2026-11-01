@@ -12,13 +12,15 @@ from PySide6.QtCore import QUrl, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QPushButton, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout,
+    QWidget,
 )
 
 from .. import musicsearch
 from ..context import AppContext
 from ..musicsearch import SOURCES, Track
-from . import theme
+from ..providers import Capability, GenerationRequest, comfy_local
+from . import icons, theme
 from .widgets import MediaPreview
 
 COLUMNS = ["Title", "Artist", "Licence", "Use", "Length", "Source"]
@@ -76,6 +78,34 @@ class MusicPanel(QWidget):
         search_row.addWidget(self.mood_box)
         search_row.addWidget(self.search_button)
         layout.addLayout(search_row)
+
+        # The same description can make a new track instead of finding one: ACE-Step in
+        # the local ComfyUI composes it, and an original track carries no licence terms.
+        compose_row = QHBoxLayout()
+        compose_note = QLabel("Or compose an original track from this description, on this PC")
+        compose_note.setObjectName("subtle")
+        compose_row.addWidget(compose_note, 1)
+        compose_row.addWidget(QLabel("Length"))
+        self.compose_length = QSpinBox()
+        self.compose_length.setRange(10, 240)
+        self.compose_length.setValue(30)
+        self.compose_length.setSuffix(" s")
+        compose_row.addWidget(self.compose_length)
+        self.compose_button = QPushButton("Compose")
+        self.compose_button.setObjectName("tonal")
+        icons.button(self.compose_button, "sparkle", "@ACCENT")
+        self.compose_button.setToolTip("ACE-Step 1.5 through your ComfyUI: about half a minute "
+                                       "for 30 seconds of music")
+        self.compose_button.clicked.connect(self.compose)
+        compose_row.addWidget(self.compose_button)
+        self.use_composed_button = QPushButton("Use it in my video")
+        self.use_composed_button.setObjectName("ghost")
+        icons.button(self.use_composed_button, "photos", "@ACCENT")
+        self.use_composed_button.clicked.connect(self._use_composed)
+        self.use_composed_button.hide()
+        compose_row.addWidget(self.use_composed_button)
+        layout.addLayout(compose_row)
+        self._composed: Path | None = None
 
         filter_row = QHBoxLayout()
         self.commercial_only = QCheckBox("Commercial use only")
@@ -363,9 +393,58 @@ class MusicPanel(QWidget):
         self._job_id = job.id
         self.status.emit(f"Downloading {track.title}")
 
+    # -- compose -----------------------------------------------------------------------------------
+    def compose(self) -> None:
+        if self.context.project is None:
+            QMessageBox.information(self, "No project", "Open a project first.")
+            return
+        comfy = self.context.registry.get("comfyui")
+        ready, reason = (comfy.builtin_status(comfy_local.ACE_STEP_ID) if comfy is not None
+                         else (False, "ComfyUI is not set up."))
+        if not ready:
+            QMessageBox.information(self, "The composer is not ready", reason)
+            return
+        style = self.query.text().strip() or "warm, calm instrumental background music"
+        seconds = float(self.compose_length.value())
+        folder = self.context.require_project().root / "music"
+        context = self.context
+
+        def work(job_context):
+            result = comfy.generate(
+                GenerationRequest(Capability.TEXT_TO_MUSIC, comfy_local.ACE_STEP_ID,
+                                  prompt=style, options={"seconds": seconds},
+                                  output_dir=folder),
+                progress=lambda fraction, message: job_context.progress(fraction, message),
+                should_cancel=lambda: job_context.cancelled)
+            path = result.files[0]
+            context.catalogue(path, source="music", label=f"Composed: {style[:48]}")
+            return {"path": path, "track": None, "use": False, "composed": style}
+
+        job = self.context.jobs.submit(f"Compose: {style[:40]}", work,
+                                       category="music_download")
+        self._job_id = job.id
+        self.compose_button.setEnabled(False)
+        self.footer.setText(f"Composing {int(seconds)} s of “{style}” on this PC…")
+        self.status.emit("Composing music")
+
+    def _use_composed(self) -> None:
+        if self._composed is not None:
+            self.music_chosen.emit(self._composed)
+            self.status.emit(f"Using {self._composed.name} in the video")
+
     def download_finished(self, result) -> None:
         path = result.get("path")
         track = result.get("track")
+        if result.get("composed"):
+            self.compose_button.setEnabled(True)
+            if isinstance(path, Path) and path.exists():
+                self._composed = path
+                self.preview.show_path(path)
+                self.use_composed_button.show()
+                self.library_changed.emit()
+                self.footer.setText(f"Composed on this PC: {path.name}. An original track — "
+                                    "no licence terms and no credit needed.")
+            return
         if isinstance(path, Path) and path.exists():
             self._downloaded.append(track)
             self.preview.show_path(path)

@@ -55,6 +55,16 @@ SIZES = {
 STEPS = {"Draft": 14, "Standard": 20, "High (slow)": 24}
 
 
+def text_only_quality(quality: str) -> str:
+    """With no photo to anchor it, the 5B model breaks up below Standard size.
+
+    Feature tour, 2026-11-01: Draft (640x352, 14 steps) gave smeared, rainbow-tinted
+    noise; 30 steps at that size was clean for one seed and banded for the next. Standard
+    (960x544, 20 steps) was clean every time, so text-only video never goes below it.
+    """
+    return "Standard" if quality == "Draft" else quality
+
+
 # Seconds per output frame, measured here (see the module docstring). Replaced by this
 # machine's own numbers after its first run.
 DEFAULT_SECONDS_PER_FRAME = {"Draft": 1.6, "Standard": 3.4, "High (slow)": 8.0}
@@ -105,9 +115,15 @@ FILES_TTL = 30.0
 
 
 def _choices(base_url: str, node: str, field: str) -> list[str]:
+    """The file names a loader offers. Older nodes list them as the first element of the
+    spec; newer ones say "COMBO" there and put them under `options`."""
     info = request_json("GET", f"{base_url}/object_info/{node}", timeout=10)
     spec = info.get(node, {}).get("input", {}).get("required", {}).get(field, [[]])
     values = spec[0] if spec else []
+    if values == "COMBO" and len(spec) > 1 and isinstance(spec[1], dict):
+        values = spec[1].get("options", [])
+    if not isinstance(values, list):
+        return []
     return [value for value in values if isinstance(value, str)]
 
 

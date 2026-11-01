@@ -601,7 +601,8 @@ class EditPanel(QWidget):
         if key == "speed":
             return ffmpeg_tools.speed_change(
                 locator, source, output(".mp4", "speed"), factor=values["factor"],
-                duration_hint=duration
+                duration_hint=duration,
+                has_audio=ffmpeg_tools.probe(locator, source).has_audio,
             ), None
         if key == "stabilise":
             return ffmpeg_tools.stabilise(locator, source, output(".mp4", "stable"),
@@ -612,7 +613,8 @@ class EditPanel(QWidget):
                 raise FileNotFoundError("Select an audio file.")
             return ffmpeg_tools.mux_audio(
                 locator, source, audio, output(".mp4", "audio"), video_duration=duration,
-                music_volume=values["volume"], keep_original=values["keep_original"]
+                music_volume=values["volume"], keep_original=values["keep_original"],
+                video_has_audio=ffmpeg_tools.probe(locator, source).has_audio,
             ), None
         if key == "subtitles":
             subtitles = Path(values["subtitles"])
@@ -665,6 +667,11 @@ class EditPanel(QWidget):
             return ffmpeg_extra.deinterlace(locator, source, output(".mp4", "progressive"),
                                             values["double_rate"], duration), None
         if key == "tonemap":
+            transfer = ffmpeg_extra.color_transfer(locator, source)
+            if transfer not in ffmpeg_extra.HDR_TRANSFERS:
+                raise ValueError(
+                    f"{source.name} is not HDR (its transfer is {transfer or 'not tagged'}), "
+                    "so it already looks right on ordinary screens. Nothing to convert.")
             return ffmpeg_extra.tonemap_hdr(locator, source, output(".mp4", "sdr"),
                                             duration), None
         if key == "crop":

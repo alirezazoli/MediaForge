@@ -291,6 +291,7 @@ class TimelinePanel(QWidget):
                 mux = ffmpeg_tools.mux_audio(
                     locator, destination, music, final,
                     video_duration=command.total_duration, keep_original=True, music_volume=0.35,
+                    video_has_audio=ffmpeg_tools.probe(locator, destination).has_audio,
                 )
                 code, log = ffmpeg_tools.run_with_progress(mux)
                 if code != 0:

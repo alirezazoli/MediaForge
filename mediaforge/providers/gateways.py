@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from . import comfy_builtin
+from . import comfy_builtin, comfy_local
 from .base import (
     Capability, GenerationRequest, GenerationResult, ModelSpec, Provider, ProviderError,
 )
@@ -680,7 +680,9 @@ class ComfyUIProvider(Provider):
             notes="Runs on this PC through ComfyUI with the Wan 2.2 TI2V 5B weights -- no "
                   "workflow to export. A photo comes to life: foliage, water and light move; "
                   "the camera stays put, and the photo film adds its own camera move. "
-                  "Standard quality takes about 4-5 minutes per clip on an 8 GB laptop GPU.",
+                  "Standard quality takes about 4-5 minutes per clip on an 8 GB laptop GPU. "
+                  "Draft is for photos only: text-only video always renders at Standard, "
+                  "because below it the model breaks up.",
             options={
                 "quality": {"type": "choice", "default": "Standard",
                             "choices": list(comfy_builtin.SIZES), "label": "Quality"},
@@ -690,6 +692,7 @@ class ComfyUIProvider(Provider):
                         "label": "Prompt strength"},
             },
         ),
+        *comfy_local.SPECS,
         ModelSpec(
             id="workflow",
             label="Run a saved API-format workflow",
@@ -748,20 +751,27 @@ class ComfyUIProvider(Provider):
 
     def builtin_status(self, model_id: str) -> tuple[bool, str]:
         """Whether a built-in graph can run now, and if not, the exact reason."""
-        if model_id != comfy_builtin.WAN22_ID:
+        if model_id != comfy_builtin.WAN22_ID and model_id not in comfy_local.SPEC_IDS:
             return False, "Not a built-in model."
+        label = self.model(model_id).label.replace(" (built in)", "").split(" (")[0]
         if not self.reachable():
-            return False, (f"ComfyUI is not running at {self.base_url}. Start it and Wan 2.2 "
+            return False, (f"ComfyUI is not running at {self.base_url}. Start it and {label} "
                            "runs on this PC.")
-        if comfy_builtin.find_wan22_files(self.base_url) is None:
-            return False, ("ComfyUI is running but the Wan 2.2 5B files are missing: "
-                           "wan2.2_ti2v_5B_fp16 (diffusion_models), umt5_xxl (text_encoders) "
-                           "and wan2.2_vae (vae).")
+        if model_id == comfy_builtin.WAN22_ID:
+            if comfy_builtin.find_wan22_files(self.base_url) is None:
+                return False, ("ComfyUI is running but the Wan 2.2 5B files are missing: "
+                               "wan2.2_ti2v_5B_fp16 (diffusion_models), umt5_xxl "
+                               "(text_encoders) and wan2.2_vae (vae).")
+        elif comfy_local.find_files(self.base_url, model_id) is None:
+            return False, (f"ComfyUI is running but {label} needs "
+                           f"{comfy_local.MISSING[model_id]}.")
         return True, "Runs on this PC through ComfyUI."
 
     def generate(self, request, progress=lambda f, m: None, should_cancel=None) -> GenerationResult:
         if request.model_id == comfy_builtin.WAN22_ID:
             return self._generate_wan22(request, progress, should_cancel)
+        if request.model_id in comfy_local.SPEC_IDS:
+            return self._generate_local(request, progress, should_cancel)
         started = time.time()
         workflow_path = Path(request.options.get("workflow_path", ""))
         if not workflow_path.is_file():
@@ -841,6 +851,9 @@ class ComfyUIProvider(Provider):
         options = request.options
 
         quality = options.get("quality") or "Standard"
+        from_photo = request.capability == Capability.IMAGE_TO_VIDEO or bool(request.reference_images)
+        if not from_photo:
+            quality = comfy_builtin.text_only_quality(quality)
         aspect = str(options.get("aspect_ratio") or "16:9")
         try:
             aspect_width, aspect_height = (int(part) for part in aspect.split(":"))
@@ -882,6 +895,7 @@ class ComfyUIProvider(Provider):
             elif value < 0 and node in stage_labels:
                 progress(*stage_labels[node])
 
+        self._make_room_on_gpu()
         client_id = str(uuid.uuid4())
         listener = comfy_builtin.ProgressSocket(self.base_url, client_id, on_step)
         listener.start()
@@ -921,6 +935,203 @@ class ComfyUIProvider(Provider):
             provider=self.key, model_id=request.model_id, elapsed_seconds=elapsed,
             cost_note="runs on this PC",
         )
+
+    # -- the other built-in models: SDXL, ACE-Step, Real-ESRGAN, Wan S2V (comfy_local) ----
+    def _generate_local(self, request, progress, should_cancel) -> GenerationResult:
+        started = time.time()
+        ready, reason = self.builtin_status(request.model_id)
+        if not ready:
+            raise ProviderError(reason)
+        model_id = request.model_id
+        files = comfy_local.find_files(self.base_url, model_id)
+        options = request.options
+        seed = request.seed if request.seed is not None else int(time.time()) % 2_147_483_647
+        prefix = f"mediaforge/{model_id}_{uuid.uuid4().hex[:8]}"
+        audio_track: Path | None = None
+        raw: dict[str, Any] = {"seed": seed}
+
+        if model_id == comfy_local.SDXL_ID:
+            aspect = str(options.get("aspect_ratio") or "16:9")
+            width, height = comfy_local.SDXL_SIZES.get(aspect, comfy_local.SDXL_SIZES["16:9"])
+            steps = comfy_local.SDXL_STEPS.get(str(options.get("quality") or "Standard"), 30)
+            image_name = None
+            if request.capability == Capability.IMAGE_EDIT or request.reference_images:
+                if not request.reference_images:
+                    raise ProviderError("An image edit needs the image to change.")
+                progress(0.02, "Sending the image to ComfyUI")
+                image_name = comfy_builtin.upload_image(self.base_url,
+                                                        Path(request.reference_images[0]))
+            negative = ", ".join(part for part in (request.negative_prompt.strip(),
+                                                   comfy_local.SDXL_NEGATIVE) if part)
+            graph = comfy_local.sdxl_graph(
+                files, request.prompt.strip(), negative, width, height, steps,
+                float(options.get("cfg") or 5.5), seed, prefix, image_name,
+                float(options.get("strength") or 0.7))
+            sampler, output, suffix, label = "5", "7", ".png", "SDXL"
+            raw.update(size=[width, height], steps=steps)
+        elif model_id == comfy_local.ACE_STEP_ID:
+            seconds = float(options.get("seconds") or 30.0)
+            graph = comfy_local.ace_step_graph(
+                files, request.prompt.strip() or "calm, warm instrumental background music",
+                str(options.get("lyrics") or "").strip(), seconds,
+                int(options.get("bpm") or 100), str(options.get("key") or "C major"),
+                str(options.get("language") or "en"), seed, prefix)
+            sampler, output, suffix, label = "6", "8", ".mp3", "ACE-Step"
+            raw.update(seconds=seconds)
+        elif model_id == comfy_local.ESRGAN_ID:
+            if not request.reference_images:
+                raise ProviderError(
+                    "For a video, use Enhance -> Upscale, which runs Real-ESRGAN on every "
+                    "frame." if request.reference_video else "Choose the image to upscale.")
+            progress(0.02, "Sending the image to ComfyUI")
+            image_name = comfy_builtin.upload_image(self.base_url,
+                                                    Path(request.reference_images[0]))
+            scale = 2 if str(options.get("scale") or "4x") == "2x" else 4
+            graph = comfy_local.esrgan_graph(files, image_name, scale, prefix)
+            sampler, output, suffix, label = "3", "4", ".png", "Real-ESRGAN"
+        else:  # Wan 2.2 S2V
+            if not request.reference_images:
+                raise ProviderError("Lip sync needs a photo of the face that will speak.")
+            if not request.audio_input:
+                raise ProviderError("Lip sync needs the voice or song for the face to perform.")
+            from PIL import Image
+
+            photo = Path(request.reference_images[0])
+            with Image.open(photo) as image:
+                photo_width, photo_height = image.size
+            quality = str(options.get("quality") or "Draft")
+            width, height = comfy_local.s2v_size(photo_width, photo_height, quality)
+            seconds = float(options.get("seconds") or 3.0)
+            length = comfy_local.s2v_frames(seconds)
+            progress(0.02, "Sending the photo and the voice to ComfyUI")
+            audio_track = self._cut_audio(Path(request.audio_input), length / comfy_local.S2V_FPS)
+            image_name = comfy_builtin.upload_image(self.base_url, photo)
+            audio_name = comfy_builtin.upload_image(self.base_url, audio_track)
+            negative = ", ".join(part for part in (request.negative_prompt.strip(),
+                                                   comfy_local.S2V_NEGATIVE) if part)
+            graph = comfy_local.s2v_graph(
+                files, request.prompt.strip() or (
+                    "The person speaks naturally to the camera, lips moving in time with the "
+                    "voice, small natural head movement, steady camera."),
+                negative, image_name, audio_name, width, height, length,
+                comfy_local.S2V_STEPS.get(quality, 12), float(options.get("cfg") or 4.5),
+                seed, prefix)
+            sampler, output, suffix, label = "12", "17", ".webm", "Wan 2.2 S2V"
+            raw.update(size=[width, height], frames=length, fps=comfy_local.S2V_FPS)
+
+        entry = self._run_graph(graph, sampler, label, progress, should_cancel)
+        progress(0.97, "Fetching the result")
+        items = self._output_items(entry, output)
+        if not items:
+            raise ProviderError("ComfyUI finished but saved nothing.")
+        destination = self._stamped_path(request.output_dir, model_id.split("-")[0], suffix)
+        self._fetch(items[0], destination)
+        if audio_track is not None:
+            destination = self._add_audio(destination, audio_track)
+        return GenerationResult(
+            files=[destination], raw=raw, provider=self.key, model_id=model_id,
+            elapsed_seconds=time.time() - started, cost_note="runs on this PC",
+        )
+
+    STAGE_WORDS = (("Loader", "Loading the model"), ("TextEncode", "Reading the prompt"),
+                   ("Encode", "Preparing the inputs"), ("Decode", "Decoding the result"),
+                   ("Save", "Saving"))
+
+    def _make_room_on_gpu(self) -> None:
+        """Asks Ollama to let go of the GPU before a ComfyUI graph needs it.
+
+        Ollama keeps a model in video memory for five minutes after each answer. On an
+        8 GB card that is most of the memory, and a video graph queued in that window
+        either spills into system RAM (several times slower) or runs out of memory. The
+        language model reloads in seconds the next time it is asked something.
+        """
+        from .ollama import DEFAULT_URL
+
+        url = (getattr(self.settings, "ollama_url", "") or DEFAULT_URL).rstrip("/")
+        try:
+            loaded = request_json("GET", f"{url}/api/ps", timeout=2).get("models", [])
+            for model in loaded:
+                request_json("POST", f"{url}/api/generate", timeout=15,
+                             json_body={"model": model.get("name", ""), "keep_alive": 0})
+        except (ProviderError, OSError):
+            pass  # Ollama not installed or not running: nothing is holding the GPU
+
+    def _run_graph(self, graph: dict, sampler_node: str, label: str, progress,
+                   should_cancel) -> dict:
+        """Queues a graph, reports the sampler's steps, returns the finished history entry."""
+        self._make_room_on_gpu()
+        def on_step(value: int, maximum: int, node: str) -> None:
+            if value >= 0 and node == sampler_node:
+                progress(0.1 + 0.85 * value / max(1, maximum),
+                         f"{label} on this PC: step {value} of {maximum}")
+            elif value < 0 and node in graph:
+                kind = graph[node].get("class_type", "")
+                words = next((text for needle, text in self.STAGE_WORDS if needle in kind), "")
+                if words:
+                    progress(0.06, f"{label}: {words.lower()}")
+
+        client_id = str(uuid.uuid4())
+        listener = comfy_builtin.ProgressSocket(self.base_url, client_id, on_step)
+        listener.start()
+        listener.connected.wait(3.0)
+        try:
+            queued = request_json("POST", f"{self.base_url}/prompt",
+                                  json_body={"prompt": graph, "client_id": client_id})
+            prompt_id = queued.get("prompt_id")
+            if not prompt_id:
+                raise ProviderError(f"ComfyUI rejected the {label} graph: {str(queued)[:400]}")
+            listener.prompt_id = prompt_id
+            progress(0.05, "Queued in ComfyUI")
+            return self._wait_for(prompt_id, should_cancel)
+        finally:
+            listener.stop()
+
+    @staticmethod
+    def _output_items(entry: dict, node: str) -> list[dict]:
+        output = entry.get("outputs", {}).get(node, {})
+        for key in ("images", "audio", "videos", "gifs"):
+            if output.get(key):
+                return list(output[key])
+        return []
+
+    def _cut_audio(self, source: Path, seconds: float) -> Path:
+        """The first `seconds` of a track as WAV: S2V encodes all the audio it is given."""
+        import subprocess
+        import tempfile
+
+        from ..ffmpeg_tools import FfmpegLocator
+
+        locator = FfmpegLocator()
+        locator.require()
+        target = Path(tempfile.mkdtemp(prefix="mediaforge_s2v_")) / f"{source.stem}_voice.wav"
+        result = subprocess.run(
+            [locator.ffmpeg, "-y", "-v", "error", "-i", str(source), "-t", f"{seconds:.3f}",
+             "-ac", "1", "-ar", "16000", str(target)],
+            capture_output=True, text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if result.returncode != 0:
+            raise ProviderError(f"Could not read the audio track: {result.stderr[-300:]}")
+        return target
+
+    def _add_audio(self, video: Path, audio: Path) -> Path:
+        """Puts the voice back under the silent clip ComfyUI saved."""
+        import subprocess
+
+        from ..ffmpeg_tools import FfmpegLocator
+
+        locator = FfmpegLocator()
+        locator.require()
+        target = video.with_suffix(".mp4")
+        result = subprocess.run(
+            [locator.ffmpeg, "-y", "-v", "error", "-i", str(video), "-i", str(audio),
+             "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-crf", "16",
+             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", str(target)],
+            capture_output=True, text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if result.returncode != 0:
+            raise ProviderError(f"Could not add the voice to the clip: {result.stderr[-300:]}")
+        video.unlink(missing_ok=True)
+        return target
 
     def _wait_for(self, prompt_id: str, should_cancel) -> dict:
         deadline = time.time() + 3600

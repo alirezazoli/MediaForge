@@ -190,9 +190,12 @@ def probe(locator: FfmpegLocator, path: Path) -> MediaInfo:
         except ValueError:
             fps = 0.0
 
+    kind = classify(path)
     return MediaInfo(
         path=path,
-        duration=float(fmt.get("duration") or 0.0),
+        # ffprobe gives a still the length of one frame (0.04 s). Taken as the photo's
+        # length, a template slot and the timeline played each photo for a blink.
+        duration=0.0 if kind == "image" else float(fmt.get("duration") or 0.0),
         width=int(video.get("width") or 0),
         height=int(video.get("height") or 0),
         fps=round(fps, 3),
@@ -200,7 +203,7 @@ def probe(locator: FfmpegLocator, path: Path) -> MediaInfo:
         video_codec=video.get("codec_name", ""),
         audio_codec=audio.get("codec_name", ""),
         size_bytes=int(fmt.get("size") or (path.stat().st_size if path.exists() else 0)),
-        kind=classify(path),
+        kind=kind,
     )
 
 
@@ -380,10 +383,15 @@ def extract_audio(
 
 def mux_audio(
     locator: FfmpegLocator, video: Path, audio: Path, output: Path, video_duration: float = 0.0,
-    music_volume: float = 1.0, keep_original: bool = False,
+    music_volume: float = 1.0, keep_original: bool = False, video_has_audio: bool = True,
 ) -> FfmpegCommand:
+    """Lays a track under a video, mixed with its own sound or replacing it.
+
+    A video with no sound track (a render of photos) has nothing to mix with: asking for
+    [0:a] there made ffmpeg refuse the graph, so the track simply becomes the sound.
+    """
     argv = _base(locator) + ["-i", str(video), "-i", str(audio)]
-    if keep_original:
+    if keep_original and video_has_audio:
         argv += [
             "-filter_complex",
             f"[1:a]volume={music_volume}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[aout]",
@@ -433,9 +441,14 @@ def overlay_image(
 
 
 def speed_change(
-    locator: FfmpegLocator, source: Path, output: Path, factor: float, duration_hint: float = 0.0
+    locator: FfmpegLocator, source: Path, output: Path, factor: float, duration_hint: float = 0.0,
+    has_audio: bool = True,
 ) -> FfmpegCommand:
-    """factor > 1 speeds up. atempo only accepts 0.5..2.0, so it gets chained."""
+    """factor > 1 speeds up. atempo only accepts 0.5..2.0, so it gets chained.
+
+    A clip with no sound track has no [0:a] to feed atempo, and ffmpeg refuses the whole
+    graph -- so a silent clip gets the picture-only graph.
+    """
     factor = max(0.1, min(factor, 20.0))
     tempo_chain: list[str] = []
     remaining = factor
@@ -446,11 +459,14 @@ def speed_change(
         tempo_chain.append("atempo=0.5")
         remaining /= 0.5
     tempo_chain.append(f"atempo={remaining:.4f}")
+    graph = f"[0:v]setpts={1 / factor:.6f}*PTS[v]"
+    maps = ["-map", "[v]"]
+    if has_audio:
+        graph += f";[0:a]{','.join(tempo_chain)}[a]"
+        maps += ["-map", "[a]"]
     argv = _base(locator) + [
-        "-i", str(source),
-        "-filter_complex",
-        f"[0:v]setpts={1 / factor:.6f}*PTS[v];[0:a]{','.join(tempo_chain)}[a]",
-        "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-crf", "20", str(output),
+        "-i", str(source), "-filter_complex", graph, *maps,
+        "-c:v", "libx264", "-crf", "20", str(output),
     ]
     return FfmpegCommand(argv, output, duration_hint / factor, f"Speed x{factor:g}")
 

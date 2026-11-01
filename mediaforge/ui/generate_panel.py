@@ -48,6 +48,7 @@ TASK_GROUPS: list[tuple[str, list[tuple[Capability, str, str]]]] = [
     ]),
     ("Sound & text", [
         (C.TEXT_TO_SPEECH, "volume", "A voice reading your script."),
+        (C.TEXT_TO_MUSIC, "music", "Original music from a description, with or without lyrics."),
         (C.SEPARATE_AUDIO, "sliders", "Split a mix into voice, music and effects."),
         (C.TRANSCRIBE, "captions", "Speech to text and subtitles."),
         (C.VIDEO_UNDERSTANDING, "eye", "Ask questions about a video's content."),
@@ -319,7 +320,8 @@ class GeneratePanel(QWidget):
         entries = []
         if capability:
             for provider in self.context.registry.for_capability(capability):
-                state = availability.provider_availability(provider)
+                state = availability.provider_availability_for(
+                    self.context.registry, provider, capability)
                 if self.local_only.isChecked() and state.state is not availability.State.FREE:
                     continue
                 entries.append((provider.name, provider.key, state))

@@ -489,6 +489,19 @@ def apply_lut(
     return FfmpegCommand(argv, output, duration_hint, "Apply LUT")
 
 
+HDR_TRANSFERS = ("smpte2084", "arib-std-b67")      # PQ (HDR10, Dolby Vision) and HLG
+
+
+def color_transfer(locator: FfmpegLocator, source: Path) -> str:
+    """The first video stream's transfer characteristic as ffprobe names it, or ""."""
+    result = subprocess.run(
+        [locator.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=color_transfer", "-of", "default=nw=1:nk=1", str(source)],
+        capture_output=True, text=True, creationflags=_NO_WINDOW)
+    value = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+    return "" if value == "unknown" else value
+
+
 def tonemap_hdr(
     locator: FfmpegLocator, source: Path, output: Path, duration_hint: float = 0.0
 ) -> FfmpegCommand:

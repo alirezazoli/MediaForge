@@ -235,7 +235,8 @@ class LibraryPanel(QWidget):
         added = 0
         for asset in self.selected_assets():
             if asset.kind in ("video", "image"):
-                project.append_clip(asset.id, 0.0, asset.duration or 4.0)
+                length = 4.0 if asset.kind == "image" else (asset.duration or 4.0)
+                project.append_clip(asset.id, 0.0, length)
                 added += 1
         self.status.emit(f"Added {added} clip(s) to the timeline")
 
