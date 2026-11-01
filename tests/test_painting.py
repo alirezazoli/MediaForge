@@ -53,3 +53,22 @@ def test_no_screen_leaves_the_window_unpainted(window, qapp):
         image = _render(window)
         page = _at(image, window, window.stack, window.stack.width() - 4, window.stack.height() // 2)
         assert page.alpha() == 255, f"{key}: unpainted page region"
+
+
+def test_no_inline_style_uses_an_eight_digit_colour(window, qapp):
+    """'#RRGGBB' with two digits appended is CSS alpha to a person and #AARRGGBB to Qt.
+    It has turned two banners into solid maroon bands so far; this catches a third."""
+    import re
+
+    from PySide6.QtWidgets import QWidget
+
+    pattern = re.compile(r"#[0-9a-fA-F]{8}\b")
+    for mode in ("light", "dark"):
+        window.apply_theme(mode)
+        for key in window.panels:
+            window.go_to(key)
+            qapp.processEvents()
+        offenders = [(widget.objectName() or type(widget).__name__, widget.styleSheet())
+                     for widget in window.findChildren(QWidget)
+                     if pattern.search(widget.styleSheet() or "")]
+        assert not offenders, offenders[:3]
