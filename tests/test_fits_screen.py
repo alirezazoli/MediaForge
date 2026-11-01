@@ -64,6 +64,36 @@ def test_every_page_fits_a_laptop_screen(window, qapp, width, height, collapsed)
     assert not report, "\n".join(report[:40])
 
 
+def test_building_the_window_flashes_no_other_window(qapp):
+    """A parentless widget made visible is a window of its own. The task tiles were, and
+    each one flashed up as a small 'MediaForge Studio' window while the app started."""
+    from PySide6.QtCore import QEvent, QObject
+
+    from mediaforge.context import AppContext
+    from mediaforge.ui.main_window import MainWindow
+
+    shown = []
+
+    class ShowSpy(QObject):
+        def eventFilter(self, watched, event):
+            if event.type() == QEvent.Type.Show and isinstance(watched, QWidget) \
+                    and watched.isWindow():
+                shown.append(f"{type(watched).__name__} {watched.objectName()!r}")
+            return False
+
+    spy = ShowSpy()
+    qapp.installEventFilter(spy)
+    context = AppContext()
+    try:
+        main = MainWindow(context)
+        qapp.processEvents()
+    finally:
+        qapp.removeEventFilter(spy)
+        context.shutdown()
+    main.deleteLater()
+    assert not shown, shown[:5]
+
+
 def test_the_window_opens_inside_the_screen(window, qapp):
     window.showNormal()
     window.show_fitted()

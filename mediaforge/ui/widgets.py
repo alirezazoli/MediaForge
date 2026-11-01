@@ -450,7 +450,9 @@ class TileGrid(QWidget):
             grid.setVerticalSpacing(theme.SPACE_2)
             tiles = []
             for key, label, glyph, tip in entries:
-                tile = QToolButton()
+                # Parented from the start: a parentless widget that is made visible is a
+                # window, and each tile used to flash up on its own while the app started.
+                tile = QToolButton(self)
                 tile.setObjectName("tile")
                 tile.setText(label)
                 tile.setToolTip(tip or label)
@@ -477,10 +479,10 @@ class TileGrid(QWidget):
                 grid.removeWidget(tile)
             shown = [tile for key, tile in self._tiles.items()
                      if tile in tiles and key not in self._hidden]
-            for tile in tiles:
-                tile.setVisible(tile in shown)
             for index, tile in enumerate(shown):
                 grid.addWidget(tile, index // columns, index % columns)
+            for tile in tiles:
+                tile.setVisible(tile in shown)
             for column in range(6):
                 grid.setColumnStretch(column, 1 if column < columns else 0)
             if title is not None:
