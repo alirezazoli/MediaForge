@@ -206,4 +206,8 @@ there and shown with the path.
 - The installer is not code-signed, so Windows SmartScreen asks for confirmation on first
   run.
 
-Third-party components and their licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+## Licence
+
+MediaForge Studio is released under the [MIT licence](LICENSE). Third-party components
+keep their own licences, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the
+bundled ffmpeg build is GPL v3.

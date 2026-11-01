@@ -87,6 +87,7 @@ try {
     Copy-Item (Join-Path $FfmpegDir "bin\ffmpeg.exe"), (Join-Path $FfmpegDir "bin\ffprobe.exe") $FfmpegOut
     $Licences = New-Item -ItemType Directory -Force (Join-Path $App "licenses")
     Copy-Item (Join-Path $Root "THIRD_PARTY_NOTICES.md") $Licences
+    Copy-Item (Join-Path $Root "LICENSE") (Join-Path $Licences "MediaForge-LICENSE.txt")
     $FfmpegLicences = New-Item -ItemType Directory -Force (Join-Path $Licences "ffmpeg")
     foreach ($name in "LICENSE", "README.txt") {
         $source = Join-Path $FfmpegDir $name
