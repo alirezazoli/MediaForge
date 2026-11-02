@@ -621,7 +621,8 @@ class PhotoClipPanel(QWidget):
                 lambda fraction, message: job_context.progress(fraction, message),
                 lambda: job_context.cancelled),
             category="engine")
-        self.ai_banner.setText("<b>Starting ComfyUI…</b> This takes about half a minute.")
+        self.ai_banner.setText("<b>Starting ComfyUI…</b> About half a minute — a few minutes "
+                               "the first time after Windows restarts.")
         self.status.emit(f"Job {job.id}: starting ComfyUI")
 
     def _local_ai_waiting(self) -> bool:

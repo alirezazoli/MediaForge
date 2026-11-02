@@ -756,6 +756,8 @@ def section_enhance(tour: Tour) -> None:
                 raise Skip(f"{tool_id} is not installed on this PC (about {size} MB; "
                            "one click in Model Hub → Local engines)")
             source = inputs.get(kind)
+            if source is None and kind != "tts":
+                raise Skip(f"no input for '{kind}' was made earlier in the tour")
             if source is not None:
                 panel.set_asset(tour.asset(Path(source)))
             tour.window.go_to("enhance")

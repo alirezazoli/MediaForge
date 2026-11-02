@@ -86,7 +86,14 @@ def start(install: ComfyInstall, url: str, log_file: Path) -> subprocess.Popen:
                             stdin=subprocess.DEVNULL, env=environment, creationflags=_NO_WINDOW)
 
 
-def wait_until_up(url: str, process: subprocess.Popen | None = None, timeout: float = 180.0,
+# Warm, ComfyUI answers in about 25 s. The first start after Windows restarts reads torch
+# and every custom node from a cold disk (and past the virus scanner) and took over three
+# minutes here -- the old 180 s limit killed it just before it was ready.
+START_TIMEOUT = 600.0
+
+
+def wait_until_up(url: str, process: subprocess.Popen | None = None,
+                  timeout: float = START_TIMEOUT,
                   progress: Callable[[float, str], None] = lambda fraction, message: None,
                   should_cancel: Callable[[], bool] = lambda: False) -> bool:
     """Waits for the server to answer. False if it exits or the time runs out."""
@@ -104,7 +111,9 @@ def wait_until_up(url: str, process: subprocess.Popen | None = None, timeout: fl
         except requests.RequestException:
             pass
         elapsed = time.time() - started
-        progress(min(0.95, elapsed / 60.0), f"Starting ComfyUI ({elapsed:.0f} s)")
+        note = (" — the first start after a restart can take a few minutes"
+                if elapsed > 45 else "")
+        progress(min(0.95, elapsed / 120.0), f"Starting ComfyUI ({elapsed:.0f} s){note}")
         time.sleep(1.0)
     return False
 
