@@ -640,9 +640,13 @@ class JobStatusCard(QFrame):
             result = job.result
             self.result_path = result if isinstance(result, Path) else None
             if self.result_path is not None:
+                size = ""
+                if self.result_path.is_file():
+                    megabytes = self.result_path.stat().st_size / (1024 * 1024)
+                    size = f"  ·  {megabytes:.1f} MB" if megabytes >= 0.1 else "  ·  < 0.1 MB"
                 self.message.setText(
                     f"<span style='color:{theme.SUCCESS}'>Done.</span>  "
-                    f"{html.escape(self.result_path.name)}")
+                    f"{html.escape(self.result_path.name)}{size}")
             else:
                 self.message.setText(
                     f"<span style='color:{theme.SUCCESS}'>Done.</span>  "

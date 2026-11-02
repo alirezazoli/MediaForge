@@ -634,7 +634,22 @@ EDIT_PLAN = [
     ("waveform", "talking", {}),
     ("convertimage", "scene", {"format": ".webp", "width": 1280}),
     ("gif", "short", {"fps": 10, "width": 360}),
+    ("gif", "short", {"_label": "Animated WebP", "format": "Animated WebP (smaller, full colour)",
+                      "fps": 10, "width": 360}),
     ("export", "film", {"preset": "YouTube 1080p"}),
+    ("convert", "film", {"_label": "Convert to HEVC",
+                         "target": "MP4 · H.265 / HEVC (half the size)"}),
+    ("convert", "film", {"_label": "Convert to WebM VP9", "target": "WebM · VP9 (for the web)"}),
+    ("convert", "talking", {"_label": "Convert to FLAC (sound only)",
+                            "target": "FLAC (sound only, lossless)"}),
+    ("convert", "film", {"_label": "Convert on the graphics card (NVENC)",
+                         "target": "MP4 · H.264 (plays everywhere)", "gpu": True}),
+    ("compress", "film", {"target_mb": 2.0}),
+    ("join", "film", {"second": "@talking", "crossfade": 0.5}),
+    ("volume", "talking", {"gain_db": -6.0}),
+    ("mute", "film", {}),
+    ("snapshot", "film", {"at": "00:00:02.00", "format": ".jpg"}),
+    ("softsubs", "talking", {"subtitles": "@srt", "container": ".mp4"}),
 ]
 
 
@@ -653,7 +668,8 @@ def section_edit(tour: Tour) -> None:
     sources["srt"] = tour.made.get("srt")
 
     for key, source_key, settings in EDIT_PLAN:
-        label = ep.TOOLS[key][0]
+        label = settings.get("_label") or ep.TOOLS[key][0]
+        settings = {name: value for name, value in settings.items() if name != "_label"}
 
         def run_tool(key=key, source_key=source_key, settings=settings):
             source = sources.get(source_key)
@@ -673,6 +689,9 @@ def section_edit(tour: Tour) -> None:
             since = tour.mark()
             panel.run()
             if tour.mark() == since:
+                if any("driver" in dialog for dialog in DIALOGS):
+                    # The PC, not the app: the refusal names the driver to install.
+                    raise Skip("; ".join(DIALOGS))
                 raise RuntimeError("the tool refused to start: " + "; ".join(DIALOGS))
             jobs = tour.wait_jobs(since, 900)
             job = jobs[-1]

@@ -7,21 +7,55 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
+    QPushButton, QVBoxLayout, QWidget,
 )
 
+from .. import ffmpeg_extra, ffmpeg_tools
 from ..context import AppContext
 from ..ffmpeg_tools import AUDIO_SUFFIXES, IMAGE_SUFFIXES, VIDEO_SUFFIXES, format_timecode
 from ..project import Asset
 from .widgets import ResponsiveSplitter, MediaPreview
-from . import theme
+from . import icons, theme
 
 MEDIA_FILTER = (
     "Media ("
     + " ".join(f"*{suffix}" for suffix in sorted(IMAGE_SUFFIXES | VIDEO_SUFFIXES | AUDIO_SUFFIXES))
     + ");;All files (*.*)"
 )
+
+
+class ConvertDialog(QDialog):
+    """Format and quality for converting a whole selection at once."""
+
+    def __init__(self, parent: QWidget, count: int) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Convert selected files")
+        layout = QVBoxLayout(self)
+        note = QLabel(f"{count} file(s). Each is saved next to the others in renders/; the "
+                      "originals are not changed.")
+        note.setWordWrap(True)
+        note.setObjectName("subtle")
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.target_box = QComboBox()
+        self.target_box.addItems(list(ffmpeg_extra.CONVERT_TARGETS))
+        self.quality_box = QComboBox()
+        self.quality_box.addItems(ffmpeg_extra.CONVERT_QUALITIES)
+        self.quality_box.setCurrentText("Balanced")
+        form.addRow("Format", self.target_box)
+        form.addRow("Quality", self.quality_box)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Convert")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def choice(self) -> tuple[str, str]:
+        return self.target_box.currentText(), self.quality_box.currentText()
 
 
 class LibraryPanel(QWidget):
@@ -107,6 +141,12 @@ class LibraryPanel(QWidget):
             button = QPushButton(label)
             button.clicked.connect(handler)
             buttons.addWidget(button, index // 2, index % 2)
+        convert_button = QPushButton("Convert selected…")
+        convert_button.setObjectName("tonal")
+        icons.button(convert_button, "convert", "@ACCENT")
+        convert_button.setToolTip("Converts every selected video or sound file to one format")
+        convert_button.clicked.connect(self._convert_selected)
+        buttons.addWidget(convert_button, 2, 0, 1, 2)
         side_layout.addLayout(buttons)
 
         splitter.addWidget(side)
@@ -239,6 +279,63 @@ class LibraryPanel(QWidget):
                 project.append_clip(asset.id, 0.0, length)
                 added += 1
         self.status.emit(f"Added {added} clip(s) to the timeline")
+
+    def _convert_selected(self) -> None:
+        """Every selected video or sound file into one format, in one job."""
+        assets = [asset for asset in self.selected_assets() if asset.kind in ("video", "audio")]
+        if not assets:
+            QMessageBox.information(self, "Nothing to convert",
+                                    "Select one or more videos or sound files first. "
+                                    "(Photos convert with Edit → Convert image.)")
+            return
+        dialog = ConvertDialog(self, len(assets))
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.convert_assets(assets, *dialog.choice())
+
+    def convert_assets(self, assets: list[Asset], target: str, quality: str) -> None:
+        context = self.context
+        locator = context.locator
+        project = context.require_project()
+        spec = ffmpeg_extra.CONVERT_TARGETS[target]
+
+        def work(job_context):
+            made, failed = [], []
+            for index, asset in enumerate(assets):
+                job_context.raise_if_cancelled()
+                destination = project.renders_dir / f"{asset.path.stem}{spec['container']}"
+                counter = 1
+                while destination.exists() or destination == asset.path:
+                    destination = (project.renders_dir
+                                   / f"{asset.path.stem}_{counter}{spec['container']}")
+                    counter += 1
+                try:
+                    info = ffmpeg_tools.probe(locator, asset.path)
+                    command = ffmpeg_extra.convert_media(
+                        locator, asset.path, destination, target, quality,
+                        has_video=bool(info.width), has_audio=info.has_audio,
+                        duration_hint=info.duration)
+                except ValueError as error:
+                    failed.append(f"{asset.path.name}: {error}")
+                    continue
+                code, log = ffmpeg_tools.run_with_progress(
+                    command,
+                    on_progress=lambda fraction, at, index=index, name=asset.path.name:
+                        job_context.progress((index + fraction) / len(assets), f"{name}: {at}"),
+                    should_cancel=lambda: job_context.cancelled)
+                if code != 0:
+                    failed.append(f"{asset.path.name}: {(log.splitlines() or ['failed'])[-1]}")
+                    continue
+                context.catalogue(destination, source="convert")
+                made.append(destination)
+            if not made:
+                raise RuntimeError("Nothing was converted:\n" + "\n".join(failed))
+            return (f"Converted {len(made)} of {len(assets)} to {spec['container']}"
+                    + ("\n" + "\n".join(failed) if failed else ""))
+
+        job = context.jobs.submit(f"Convert {len(assets)} file(s) to {spec['container']}",
+                                  work, category="import")
+        self.status.emit(f"Job {job.id}: converting {len(assets)} file(s)")
 
     def _remove_selected(self) -> None:
         assets = self.selected_assets()

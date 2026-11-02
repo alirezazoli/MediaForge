@@ -138,6 +138,281 @@ def _base(locator: FfmpegLocator) -> list[str]:
     return [locator.ffmpeg, "-y", "-hide_banner"]
 
 
+HARDWARE_ENCODERS = {"nvidia": "h264_nvenc", "amd": "h264_amf", "intel": "h264_qsv"}
+_hardware_checked: dict[tuple[str, str], tuple[bool, str]] = {}
+
+
+def hardware_encoder_works(locator: FfmpegLocator, vendor: str) -> tuple[bool, str]:
+    """Whether the graphics card can really encode, and if not, what to do about it.
+
+    `-encoders` only says the encoder was compiled in. Here ffmpeg 9 lists h264_nvenc,
+    then refuses to open it because the NVIDIA driver (596) is older than the 610 it
+    needs -- so the only honest test is a tenth of a second of real encoding.
+    """
+    key = (locator.ffmpeg or "", vendor)
+    if key in _hardware_checked:
+        return _hardware_checked[key]
+    encoder = HARDWARE_ENCODERS.get(vendor)
+    if encoder is None:
+        return False, f"Unknown graphics card maker '{vendor}'."
+    result = subprocess.run(
+        [locator.ffmpeg, "-hide_banner", "-v", "error", "-f", "lavfi", "-i",
+         "color=black:size=256x256:duration=0.1", "-c:v", encoder, "-f", "null", "-"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        creationflags=_NO_WINDOW)
+    if result.returncode == 0:
+        verdict = (True, "")
+    else:
+        log = result.stderr
+        driver = next((line.split("is ")[-1].split(" or")[0] for line in log.splitlines()
+                       if "minimum required" in line.lower() and "driver" in line.lower()), "")
+        verdict = (False, (
+            f"The graphics card cannot encode with this ffmpeg: its driver is too old. "
+            f"Update the {vendor.upper() if vendor != 'nvidia' else 'NVIDIA'} driver to "
+            f"{driver} or newer, or leave encoding to the processor."
+            if driver else
+            f"The graphics card's encoder ({encoder}) did not start: "
+            f"{(log.strip().splitlines() or ['no message'])[0][:200]}"))
+    _hardware_checked[key] = verdict
+    return verdict
+
+
+# ======================================================================================
+# Convert, compress, join -- changing what a file is, not what it shows
+# ======================================================================================
+
+# One target per line, named the way people ask for it: the container, the codec, and
+# what it is good for. "video": None means the result is sound only.
+CONVERT_TARGETS: dict[str, dict] = {
+    "MP4 · H.264 (plays everywhere)": {"container": ".mp4", "video": "libx264", "audio": "aac"},
+    "MP4 · H.265 / HEVC (half the size)": {"container": ".mp4", "video": "libx265",
+                                           "audio": "aac"},
+    "WebM · VP9 (for the web)": {"container": ".webm", "video": "libvpx-vp9",
+                                 "audio": "libopus"},
+    "WebM · AV1 (smallest, slowest)": {"container": ".webm", "video": "libsvtav1",
+                                       "audio": "libopus"},
+    "MOV · ProRes 422 (for editing)": {"container": ".mov", "video": "prores_ks",
+                                       "audio": "pcm_s16le"},
+    "MKV · same streams (instant, no quality loss)": {"container": ".mkv", "video": "copy",
+                                                      "audio": "copy"},
+    "MP4 · same streams (instant, no quality loss)": {"container": ".mp4", "video": "copy",
+                                                      "audio": "copy"},
+    "MP3 (sound only)": {"container": ".mp3", "video": None, "audio": "libmp3lame"},
+    "M4A · AAC (sound only)": {"container": ".m4a", "video": None, "audio": "aac"},
+    "WAV (sound only, uncompressed)": {"container": ".wav", "video": None,
+                                       "audio": "pcm_s16le"},
+    "FLAC (sound only, lossless)": {"container": ".flac", "video": None, "audio": "flac"},
+    "OGG · Opus (sound only, small)": {"container": ".ogg", "video": None, "audio": "libopus"},
+}
+CONVERT_QUALITIES = ["High", "Balanced", "Small"]
+
+# Quality per codec, as (High, Balanced, Small). CRF scales differ between encoders, so
+# "Balanced" is a different number for each one rather than one number for all.
+_VIDEO_QUALITY = {
+    "libx264": ["-crf", ("18", "22", "27"), "-preset", "medium"],
+    "libx265": ["-crf", ("20", "24", "28"), "-preset", "medium", "-tag:v", "hvc1"],
+    "libvpx-vp9": ["-crf", ("28", "33", "38"), "-b:v", "0", "-row-mt", "1"],
+    "libsvtav1": ["-crf", ("28", "34", "40"), "-preset", "8"],
+    "h264_nvenc": ["-cq", ("19", "23", "28"), "-preset", "p5"],
+    "hevc_nvenc": ["-cq", ("21", "25", "29"), "-preset", "p5", "-tag:v", "hvc1"],
+}
+_AUDIO_QUALITY = {
+    "aac": ["-b:a", ("256k", "192k", "128k")],
+    "libopus": ["-b:a", ("192k", "128k", "96k")],
+    "libmp3lame": ["-q:a", ("0", "2", "5")],
+    "flac": ["-compression_level", ("8", "5", "3")],
+}
+
+
+def _pick(options: list, level: int) -> list[str]:
+    return [option[level] if isinstance(option, tuple) else option for option in options]
+
+
+def convert_media(
+    locator: FfmpegLocator, source: Path, output: Path, target: str, quality: str = "Balanced",
+    use_gpu: bool = False, has_video: bool = True, has_audio: bool = True,
+    duration_hint: float = 0.0,
+) -> FfmpegCommand:
+    """Re-wraps or re-encodes a file into one of CONVERT_TARGETS."""
+    spec = CONVERT_TARGETS.get(target)
+    if spec is None:
+        raise ValueError(f"Unknown format '{target}'")
+    if spec["video"] is None and not has_audio:
+        raise ValueError(f"{source.name} has no sound track to save as {spec['container']}.")
+    if spec["video"] not in (None, "copy") and not has_video:
+        raise ValueError(f"{source.name} is sound only. Choose one of the sound formats.")
+    level = CONVERT_QUALITIES.index(quality) if quality in CONVERT_QUALITIES else 1
+
+    argv = _base(locator) + ["-i", str(source)]
+    if spec["video"] == "copy":
+        # Every stream as it is, into the new container: seconds, and nothing re-encoded.
+        argv += ["-map", "0", "-c", "copy"]
+    else:
+        if spec["video"] and has_video:
+            codec = spec["video"]
+            if use_gpu and codec in ("libx264", "libx265"):
+                codec = "h264_nvenc" if codec == "libx264" else "hevc_nvenc"
+            argv += ["-map", "0:v:0", "-c:v", codec]
+            if codec == "prores_ks":
+                argv += ["-profile:v", ("3", "2", "1")[level], "-pix_fmt", "yuv422p10le"]
+            else:
+                argv += _pick(_VIDEO_QUALITY[codec], level) + ["-pix_fmt", "yuv420p"]
+        else:
+            argv += ["-vn"]
+        if has_audio:
+            argv += ["-map", "0:a:0?", "-c:a", spec["audio"]]
+            argv += _pick(_AUDIO_QUALITY.get(spec["audio"], []), level)
+    if spec["container"] in (".mp4", ".m4a", ".mov"):
+        argv += ["-movflags", "+faststart"]
+    argv += [str(output)]
+    return FfmpegCommand(argv, output, duration_hint, f"Convert to {spec['container']}")
+
+
+# Bits per pixel per frame below which H.264 visibly falls apart; used to decide how far
+# to scale down so a size target still looks like video rather than mush.
+MIN_BITS_PER_PIXEL = 0.045
+COMPRESS_HEIGHTS = [2160, 1440, 1080, 720, 540, 480, 360, 240]
+
+
+def compress_plan(duration: float, target_mb: float, width: int, height: int, fps: float,
+                  has_audio: bool = True) -> dict:
+    """The bitrates and size that make a file land just under `target_mb`."""
+    if duration <= 0:
+        raise ValueError("The clip's length is unknown, so a size cannot be planned.")
+    audio_kbps = 96 if has_audio else 0
+    # 3% for the container and so the result lands under the limit rather than on it.
+    total_kbps = target_mb * 8 * 1024 * 0.97 / duration
+    video_kbps = int(total_kbps - audio_kbps)
+    if video_kbps < 60:
+        raise ValueError(
+            f"{target_mb:g} MB is too small for {duration:.0f} s of video: it leaves "
+            f"{max(video_kbps, 0)} kbit/s for the picture. Trim the clip or allow more MB.")
+    fps = fps or 30.0
+    chosen = height or 720
+    for candidate in [height] + [h for h in COMPRESS_HEIGHTS if h < (height or 99999)]:
+        if not candidate:
+            continue
+        pixels = candidate * (width / height if height else 16 / 9) * candidate
+        chosen = candidate
+        if video_kbps * 1000 / (pixels * fps) >= MIN_BITS_PER_PIXEL:
+            break
+    return {"video_kbps": video_kbps, "audio_kbps": audio_kbps,
+            "height": chosen if chosen != height else 0}
+
+
+def compress_pass(locator: FfmpegLocator, source: Path, output: Path, plan: dict, pass_number: int,
+                  log_prefix: Path, duration_hint: float = 0.0) -> FfmpegCommand:
+    """One of the two passes: the first measures, the second spends the bits where needed."""
+    argv = _base(locator) + ["-i", str(source)]
+    if plan["height"]:
+        argv += ["-vf", f"scale=-2:{plan['height']}"]
+    argv += ["-c:v", "libx264", "-preset", "medium", "-b:v", f"{plan['video_kbps']}k",
+             "-pix_fmt", "yuv420p", "-pass", str(pass_number), "-passlogfile", str(log_prefix)]
+    if pass_number == 1:
+        argv += ["-an", "-f", "null", "NUL" if sys.platform == "win32" else "/dev/null"]
+        return FfmpegCommand(argv, output, duration_hint, "Compress: measuring")
+    if plan["audio_kbps"]:
+        argv += ["-c:a", "aac", "-b:a", f"{plan['audio_kbps']}k"]
+    argv += ["-movflags", "+faststart", str(output)]
+    return FfmpegCommand(argv, output, duration_hint, "Compress: encoding")
+
+
+def join_clips(
+    locator: FfmpegLocator, sources: list[Path], output: Path, durations: list[float],
+    has_audio: list[bool], width: int, height: int, fps: float, crossfade: float = 0.0,
+) -> FfmpegCommand:
+    """Joins clips end to end with their sound, optionally crossfading picture and sound.
+
+    The timeline's join drops the sound; joining two interviews should not. A clip with no
+    sound gets silence of its own length, so the soundtrack stays in step with the picture.
+    """
+    if len(sources) < 2:
+        raise ValueError("Joining needs at least two clips.")
+    argv = _base(locator)
+    for source in sources:
+        argv += ["-i", str(source)]
+    fps = fps or 30.0
+    filters = []
+    for index, (length, audible) in enumerate(zip(durations, has_audio)):
+        filters.append(
+            f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps},"
+            f"format=yuv420p,settb=AVTB[v{index}]")
+        filters.append(
+            f"[{index}:a]aresample=48000,aformat=channel_layouts=stereo[a{index}]" if audible
+            else f"anullsrc=r=48000:cl=stereo,atrim=0:{length:.3f}[a{index}]")
+    fade = min(crossfade, *(length / 2 for length in durations)) if crossfade > 0 else 0.0
+    if fade > 0:
+        video, audio, offset = "v0", "a0", durations[0] - fade
+        for index in range(1, len(sources)):
+            filters.append(f"[{video}][v{index}]xfade=transition=fade:duration={fade:.3f}:"
+                           f"offset={offset:.3f}[vx{index}]")
+            filters.append(f"[{audio}][a{index}]acrossfade=d={fade:.3f}[ax{index}]")
+            video, audio = f"vx{index}", f"ax{index}"
+            offset += durations[index] - fade
+        total = sum(durations) - fade * (len(sources) - 1)
+    else:
+        pairs = "".join(f"[v{i}][a{i}]" for i in range(len(sources)))
+        filters.append(f"{pairs}concat=n={len(sources)}:v=1:a=1[vj][aj]")
+        video, audio, total = "vj", "aj", sum(durations)
+    argv += ["-filter_complex", ";".join(filters), "-map", f"[{video}]", "-map", f"[{audio}]",
+             "-c:v", "libx264", "-crf", "20", "-preset", "medium", "-pix_fmt", "yuv420p",
+             "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(output)]
+    return FfmpegCommand(argv, output, total, f"Join {len(sources)} clips")
+
+
+def remove_audio(locator: FfmpegLocator, source: Path, output: Path,
+                 duration_hint: float = 0.0) -> FfmpegCommand:
+    argv = _base(locator) + ["-i", str(source), "-map", "0:v", "-c:v", "copy", "-an",
+                             str(output)]
+    return FfmpegCommand(argv, output, duration_hint, "Remove the sound")
+
+
+def change_volume(locator: FfmpegLocator, source: Path, output: Path, gain_db: float,
+                  duration_hint: float = 0.0) -> FfmpegCommand:
+    """Louder or quieter by a fixed amount; the picture is copied, not re-encoded."""
+    argv = _base(locator) + ["-i", str(source), "-map", "0:v?", "-map", "0:a",
+                             "-c:v", "copy", "-af", f"volume={gain_db:+.1f}dB"]
+    argv += (["-c:a", "aac", "-b:a", "192k"] if output.suffix.lower() != ".wav"
+             else ["-c:a", "pcm_s16le"])
+    argv += [str(output)]
+    return FfmpegCommand(argv, output, duration_hint, f"Volume {gain_db:+.1f} dB")
+
+
+def snapshot(locator: FfmpegLocator, source: Path, output: Path, at_seconds: float) -> FfmpegCommand:
+    """One full-resolution still from the given moment."""
+    argv = _base(locator) + ["-ss", f"{max(0.0, at_seconds):.3f}", "-i", str(source),
+                             "-frames:v", "1"]
+    if output.suffix.lower() in (".jpg", ".jpeg"):
+        argv += ["-q:v", "2"]
+    argv += [str(output)]
+    return FfmpegCommand(argv, output, 0.0, "Save a still")
+
+
+def to_animated_webp(locator: FfmpegLocator, source: Path, output: Path, fps: int = 12,
+                     width: int = 480, duration_hint: float = 0.0) -> FfmpegCommand:
+    """Like a GIF, but full colour and usually a third of the size."""
+    argv = _base(locator) + ["-i", str(source), "-vf",
+                             f"fps={fps},scale={width}:-2:flags=lanczos",
+                             "-c:v", "libwebp_anim", "-loop", "0", "-quality", "75", "-an",
+                             str(output)]
+    return FfmpegCommand(argv, output, duration_hint, "Animated WebP")
+
+
+def add_subtitle_track(locator: FfmpegLocator, source: Path, subtitles: Path, output: Path,
+                       language: str = "eng", duration_hint: float = 0.0) -> FfmpegCommand:
+    """Subtitles as a track the viewer can switch on and off, not burned into the picture.
+
+    Nothing is re-encoded. MP4 needs the subtitles converted to its own text format;
+    MKV keeps them as they are.
+    """
+    subtitle_codec = "mov_text" if output.suffix.lower() in (".mp4", ".m4v", ".mov") else "srt"
+    argv = _base(locator) + ["-i", str(source), "-i", str(subtitles), "-map", "0", "-map", "1",
+                             "-c", "copy", "-c:s", subtitle_codec,
+                             "-metadata:s:s:0", f"language={language}", str(output)]
+    return FfmpegCommand(argv, output, duration_hint, "Add a subtitle track")
+
+
 # ======================================================================================
 # Cleanup: denoise, sharpen, deband, deblock, deinterlace
 # ======================================================================================

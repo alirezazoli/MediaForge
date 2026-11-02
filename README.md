@@ -1,7 +1,7 @@
 # MediaForge Studio
 
 A Windows desktop studio for video and photo work: turn photos into a moving film, repair
-and upscale footage, edit with 38 ffmpeg tools, generate with the AI video and image
+and upscale footage, edit with 45 ffmpeg tools, generate with the AI video and image
 APIs, and let a director agent take a written brief all the way to an assembled cut.
 
 Everything that can run on your own machine does — editing, repair, the photo film, and
@@ -42,7 +42,7 @@ move, and every job reports its progress on the screen that started it.
 | Photos to video | Photos → Look → Film → Create | Photos become shots with camera moves, crossfades, atmosphere and music |
 | Repair & upscale | Video → Analyse → Fix → Result | Measures noise, softness, dead air, bars, shake, interlacing and loudness, then fixes what it found; before/after wipe |
 | Batch repair | Folder → Analyse → Fix → Repair | The same, for a whole folder, with a per-file account of what happened |
-| Edit | File → Tool → Settings → Result | 38 ffmpeg tools as tiles; the result can be fed straight back in for the next tool |
+| Edit | File → Tool → Settings → Result | 45 ffmpeg tools as tiles — cut, frame, look, layer, sound, convert (MP4/HEVC/WebM/AV1/ProRes/MKV, MP3/M4A/WAV/FLAC/Opus), compress to a size in MB, join, stills; the result can be fed straight back in for the next tool |
 | Enhance | File → What to do → Result | Local AI engines: Real-ESRGAN, Real-CUGAN, waifu2x, RIFE, rembg, Whisper, Demucs, Kokoro |
 | Generate | Task → Model → Prompt → Result | Every provider capability; only tasks something can actually run are shown |
 | Director | Brief → Crew → Cut → Result | Writes a shot list, makes stills and clips, narrates, assembles |

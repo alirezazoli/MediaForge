@@ -38,6 +38,7 @@ TOOL_GROUPS: list[tuple[str, list[tuple[str, str, str, str]]]] = [
         ("reverse", "Reverse", "reverse", "Plays the clip backwards."),
         ("loop", "Loop", "loop", "Repeats the clip, or plays it forward then back."),
         ("fade", "Fade in / out", "fade", "Fades picture and sound from and to black."),
+        ("join", "Join clips", "link", "Puts two or three clips end to end, with their sound."),
     ]),
     ("Frame", [
         ("social", "Reframe for social", "phone",
@@ -70,22 +71,33 @@ TOOL_GROUPS: list[tuple[str, list[tuple[str, str, str, str]]]] = [
         ("blurregion", "Blur an area", "blur", "Hides a face, a number plate or a screen."),
         ("subtitles", "Burn subtitles", "captions",
          "Writes an .srt file permanently into the picture."),
+        ("softsubs", "Subtitle track", "list",
+         "Adds an .srt as a track viewers switch on and off. Nothing is re-encoded."),
     ]),
     ("Sound", [
         ("audio", "Add music", "music", "Adds or replaces the soundtrack."),
-        ("loudness", "Loudness", "volume", "Sets the level to a broadcast or streaming target."),
+        ("volume", "Volume", "volume", "Louder or quieter by a set amount."),
+        ("loudness", "Loudness", "sliders", "Sets the level to a broadcast or streaming target."),
         ("cleanspeech", "Clean up voice", "mic", "Gates, de-noises and evens out speech."),
+        ("mute", "Remove sound", "mute", "Keeps the picture, drops the soundtrack."),
         ("extract_audio", "Extract audio", "headphones", "Saves the sound as an MP3."),
     ]),
-    ("Stills & export", [
+    ("Convert & deliver", [
+        ("convert", "Convert format", "convert",
+         "MP4, HEVC, WebM, AV1, ProRes, MKV, or sound only as MP3, M4A, WAV, FLAC, Opus."),
+        ("compress", "Compress to a size", "download",
+         "Fits the video under a size in MB, for email, Telegram or Discord."),
+        ("export", "Export for…", "export",
+         "Ready-made settings for YouTube, Instagram, TikTok and more."),
+        ("gif", "GIF / WebP", "gif", "A small looping animation for chat or the web."),
+    ]),
+    ("Stills", [
+        ("snapshot", "Save a still", "camera", "One full-size picture from a chosen moment."),
         ("kenburns", "Photo to video", "photo", "Turns a still into a slow zoom shot."),
         ("frames", "Extract frames", "frames", "Saves a still every few seconds."),
         ("contactsheet", "Contact sheet", "grid", "One image with a grid of frames from the clip."),
         ("waveform", "Waveform image", "wave", "A picture of the soundtrack's shape."),
         ("convertimage", "Convert image", "image", "Changes an image's format or size."),
-        ("gif", "GIF", "gif", "A small looping GIF for chat or the web."),
-        ("export", "Export for…", "export",
-         "Ready-made settings for YouTube, Instagram, TikTok and more."),
     ]),
 ]
 TOOLS = {key: (label, glyph, tip) for _, entries in TOOL_GROUPS
@@ -318,8 +330,39 @@ class EditPanel(QWidget):
             add_double("every_seconds", "One frame every N seconds", 1.0, 0.04, 60.0, 0.25)
             add_int("width", "Frame width", 1280, 64, 7680)
         elif key == "gif":
+            add_choice("format", "Format", ["GIF", "Animated WebP (smaller, full colour)"],
+                       "GIF")
             add_int("fps", "FPS", 12, 4, 30)
             add_int("width", "Width", 480, 64, 1920)
+        elif key == "convert":
+            add_choice("target", "Format", list(ffmpeg_extra.CONVERT_TARGETS),
+                       "MP4 · H.264 (plays everywhere)")
+            add_choice("quality", "Quality", ffmpeg_extra.CONVERT_QUALITIES, "Balanced")
+            add_check("gpu", "Encode on the graphics card (NVIDIA, H.264/HEVC)", False)
+        elif key == "compress":
+            add_double("target_mb", "Fit under (MB)", 25.0, 1.0, 4000.0, 1.0)
+            limits = QLabel("Common limits: email 25 MB, Discord 10 MB, WhatsApp 16 MB, "
+                            "Telegram 2000 MB. The picture is scaled down only if the size "
+                            "could not otherwise hold it.")
+            limits.setObjectName("subtle")
+            limits.setWordWrap(True)
+            form.addRow(limits)
+        elif key == "join":
+            add_file("second", "Second clip", "Video (*.mp4 *.mov *.mkv *.webm *.avi)")
+            add_file("third", "Third clip (optional)", "Video (*.mp4 *.mov *.mkv *.webm *.avi)")
+            add_double("crossfade", "Crossfade (s, 0 = straight cut)", 0.0, 0.0, 3.0, 0.25)
+        elif key == "volume":
+            add_double("gain_db", "Change (dB, + louder / - quieter)", 6.0, -40.0, 30.0, 1.0)
+        elif key == "snapshot":
+            snapshot_at = QLineEdit("00:00:01.00")
+            form.addRow("At (hh:mm:ss)", snapshot_at)
+            widgets["at"] = snapshot_at
+            add_choice("format", "Format", [".png", ".jpg"], ".png")
+        elif key == "softsubs":
+            add_file("subtitles", "Subtitle file", "Subtitles (*.srt)")
+            add_choice("container", "Save as", [".mp4", ".mkv"], ".mp4")
+            add_choice("language", "Language", ["eng", "fas", "ara", "tur", "fra", "deu", "spa"],
+                       "eng")
         elif key == "kenburns":
             add_double("seconds", "Duration (seconds)", 5.0, 0.5, 60.0, 0.5)
             add_int("fps", "FPS", 30, 12, 60)
@@ -424,7 +467,7 @@ class EditPanel(QWidget):
             add_double("threshold", "Scene threshold (0.1 sensitive .. 0.6 strict)",
                        0.30, 0.05, 0.9, 0.05)
             add_check("add_to_timeline", "Add the resulting clips to the timeline", True)
-        elif key in ("stabilise", "extract_audio"):
+        elif key in ("stabilise", "extract_audio", "mute"):
             form.addRow(QLabel("No parameters."))
 
         page.setProperty("widgets", widgets)
@@ -643,8 +686,49 @@ class EditPanel(QWidget):
                 width=values["width"]
             ), None
         if key == "gif":
+            if values.get("format", "GIF").startswith("Animated WebP"):
+                return ffmpeg_extra.to_animated_webp(
+                    locator, source, output(".webp", "clip"), fps=values["fps"],
+                    width=values["width"], duration_hint=duration), None
             return ffmpeg_tools.to_gif(locator, source, output(".gif", "clip"), fps=values["fps"],
                                        width=values["width"], duration_hint=duration), None
+        if key == "convert":
+            info = ffmpeg_tools.probe(locator, source)
+            if values["gpu"]:
+                works, reason = ffmpeg_extra.hardware_encoder_works(locator, "nvidia")
+                if not works:
+                    raise ValueError(reason + "\n\nUntick the graphics-card option to convert "
+                                              "on the processor instead.")
+            spec = ffmpeg_extra.CONVERT_TARGETS[values["target"]]
+            tag = spec["container"].lstrip(".") + (
+                "_" + spec["video"].replace("lib", "").split("_")[0]
+                if spec["video"] not in (None, "copy") else "")
+            return ffmpeg_extra.convert_media(
+                locator, source, output(spec["container"], tag), values["target"],
+                values["quality"], values["gpu"], has_video=bool(info.width),
+                has_audio=info.has_audio, duration_hint=duration), None
+        if key == "mute":
+            return ffmpeg_extra.remove_audio(locator, source, output(source.suffix, "silent"),
+                                             duration), None
+        if key == "volume":
+            suffix = source.suffix if source.suffix.lower() in (".mp4", ".mov", ".mkv",
+                                                                ".m4a", ".wav") else ".mp4"
+            return ffmpeg_extra.change_volume(locator, source, output(suffix, "volume"),
+                                              values["gain_db"], duration), None
+        if key == "snapshot":
+            at = ffmpeg_tools.parse_timecode(values["at"])
+            if duration and at > duration:
+                raise ValueError(f"The clip is only {ffmpeg_tools.format_timecode(duration)} "
+                                 "long.")
+            return ffmpeg_extra.snapshot(locator, source, output(values["format"], "still"),
+                                         at), None
+        if key == "softsubs":
+            subtitles = Path(values["subtitles"])
+            if not subtitles.is_file():
+                raise FileNotFoundError("Select an .srt subtitle file.")
+            return ffmpeg_extra.add_subtitle_track(
+                locator, source, subtitles, output(values["container"], "subtitled"),
+                values["language"], duration), None
         if key == "kenburns":
             if self.asset and self.asset.kind != "image":
                 raise ValueError("Ken Burns needs a still image as the source.")
@@ -754,12 +838,76 @@ class EditPanel(QWidget):
                 int(values["width"]), int(values["height"]), int(values["quality"])
             ), None
         if key == "export":
+            if values["hardware"] != "none":
+                works, reason = ffmpeg_extra.hardware_encoder_works(locator, values["hardware"])
+                if not works:
+                    raise ValueError(reason + "\n\nSet the hardware encoder to 'none' to "
+                                              "export on the processor instead.")
             preset = ffmpeg_extra.EXPORT_PRESETS[values["preset"]]
             tag = values["preset"].split()[0].lower().replace("/", "")
             return ffmpeg_extra.export_with_preset(
                 locator, source, output(preset["container"], tag), values["preset"],
                 duration, values["hardware"]
             ), None
+
+        if key == "compress":
+            info = ffmpeg_tools.probe(locator, source)
+            plan = ffmpeg_extra.compress_plan(info.duration or duration, values["target_mb"],
+                                              info.width, info.height, info.fps,
+                                              info.has_audio)
+            destination = output(".mp4", f"{values['target_mb']:g}MB")
+            log_prefix = self.context.require_project().root / "cache" / f"{source.stem}_2pass"
+            log_prefix.parent.mkdir(parents=True, exist_ok=True)
+            context = self.context
+
+            def work(job_context):
+                for number, (low, high, label) in enumerate(
+                        ((0.0, 0.45, "Measuring"), (0.45, 1.0, "Encoding")), start=1):
+                    command = ffmpeg_extra.compress_pass(locator, source, destination, plan,
+                                                         number, log_prefix, duration)
+                    code, log = ffmpeg_tools.run_with_progress(
+                        command,
+                        on_progress=lambda fraction, at, low=low, high=high, label=label:
+                            job_context.progress(low + fraction * (high - low), f"{label} {at}"),
+                        should_cancel=lambda: job_context.cancelled)
+                    if code != 0:
+                        raise RuntimeError(f"Compress pass {number} failed:\n{log}")
+                for leftover in log_prefix.parent.glob(f"{log_prefix.name}*"):
+                    leftover.unlink(missing_ok=True)
+                context.catalogue(destination, source="edit")
+                return destination
+
+            return None, work
+
+        if key == "join":
+            others = [Path(values[name]) for name in ("second", "third") if values[name]]
+            missing = [path.name for path in others if not path.is_file()]
+            if not others or missing:
+                raise FileNotFoundError("Select the second clip to join"
+                                        + (f" ({', '.join(missing)} not found)." if missing
+                                           else "."))
+            destination = output(".mp4", "joined")
+            context = self.context
+
+            def work(job_context):
+                job_context.progress(0.03, "Measuring the clips")
+                clips = [source] + others
+                infos = [ffmpeg_tools.probe(locator, clip) for clip in clips]
+                command = ffmpeg_extra.join_clips(
+                    locator, clips, destination, [info.duration for info in infos],
+                    [info.has_audio for info in infos],
+                    infos[0].width or 1920, infos[0].height or 1080, infos[0].fps or 30.0,
+                    values["crossfade"])
+                code, log = ffmpeg_tools.run_with_progress(
+                    command, on_progress=lambda fraction, at: job_context.progress(
+                        0.05 + fraction * 0.95, f"Joining {at}"),
+                    should_cancel=lambda: job_context.cancelled)
+                if code != 0:
+                    raise RuntimeError(f"Joining failed:\n{log}")
+                context.catalogue(destination, source="edit")
+                return destination
+
+            return None, work
 
         if key == "vidstab":
             destination = output(".mp4", "stable")
