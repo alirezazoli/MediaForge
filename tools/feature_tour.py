@@ -102,10 +102,14 @@ class Tour:
     def wait_jobs(self, since: int, timeout: float, settle: float = 1.0) -> list:
         """Waits for every job started after `since` (and any they start) to finish."""
         deadline = time.monotonic() + timeout
+        start_by = time.monotonic() + 15
         quiet_since = None
         while time.monotonic() < deadline:
             self.pump(0.2)
             new = [job for job in self.context.jobs.jobs() if job.id > since]
+            if not new and time.monotonic() > start_by:
+                # The screen refused before starting anything; its dialog says why.
+                raise RuntimeError("no job started: " + ("; ".join(DIALOGS) or "no message"))
             busy = any(job.state in (JobState.QUEUED, JobState.RUNNING) for job in new)
             if new and not busy:
                 quiet_since = quiet_since or time.monotonic()
@@ -885,6 +889,13 @@ def main() -> int:
 
     tour.check("Setup", "Prepare test inputs (photos, logo, LUT, faulty and green clips)",
                lambda: prepare_inputs(tour)[:3])
+
+    def comfyui():
+        comfy = tour.context.registry.get("comfyui")
+        if comfy.reachable(force=True):
+            return ["ComfyUI was already running"]
+        return [tour.context.start_comfyui()]   # what the Start ComfyUI button runs
+    tour.check("Setup", "ComfyUI is running (started the way the app starts it)", comfyui)
     for name, section in SECTIONS.items():
         if (args.only and name not in args.only) or name in args.skip:
             continue

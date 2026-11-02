@@ -473,11 +473,17 @@ class GeneratePanel(QWidget):
             self.context.registry, provider_key, model_id, capability
         )
         if not state.usable:
-            QMessageBox.warning(
-                self, "This model needs a key",
-                f"{state.reason}\n\nAdd the key in Settings, or tick 'Only what runs "
-                f"without an API key' to see what runs with no key at all.",
-            )
+            # A stopped local engine is not missing a key; telling the user to add one
+            # sends them to the wrong screen.
+            if "key" in state.reason.lower():
+                title, advice = "This model needs a key", (
+                    "Add the key in Settings, or tick 'Only what runs without an API key' "
+                    "to see what runs with no key at all.")
+            else:
+                title, advice = "This model cannot run yet", (
+                    "Press 'Start ComfyUI' on this step, or start it yourself."
+                    if provider_key == "comfyui" else "")
+            QMessageBox.warning(self, title, f"{state.reason}\n\n{advice}".strip())
             self.flow.go_to(STEP_MODEL)
             return
 
