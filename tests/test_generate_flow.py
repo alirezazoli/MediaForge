@@ -96,3 +96,13 @@ def test_a_stopped_comfyui_offers_start_not_a_key(panel, monkeypatch):
     assert panel.model_box.findData(WAN22_ID) >= 0
     assert not panel.key_button.isHidden()
     assert panel.key_button.text() == "Start ComfyUI"
+
+
+def test_a_stopped_ollama_offers_start_not_a_key(panel, monkeypatch):
+    ollama = panel.context.registry.get("ollama")
+    monkeypatch.setattr(type(ollama), "reachable", lambda self, force=False: False)
+    monkeypatch.setattr(type(ollama), "installed", property(lambda self: True))
+    _choose(panel, Capability.LLM, "ollama")
+    assert not panel.key_button.isHidden()
+    assert panel.key_button.text() == "Start Ollama"
+    assert "not running" in panel.credential_label.text()

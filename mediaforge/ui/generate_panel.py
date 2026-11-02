@@ -346,17 +346,26 @@ class GeneratePanel(QWidget):
         self.key_button.setVisible(bool(entries) and usable < 0)
         self.key_button.setEnabled(True)
         # A local engine that is merely stopped needs starting, not a key.
-        self._start_engine = bool(
-            provider is not None and provider.key == "comfyui"
-            and self.context.comfy_install() is not None and not provider.reachable())
-        self.key_button.setText("Start ComfyUI" if self._start_engine else "Add a key")
-        icons.button(self.key_button, "play" if self._start_engine else "settings", "@ACCENT")
+        engine = ""
+        if provider is not None and provider.key == "comfyui":
+            if self.context.comfy_install() is not None and not provider.reachable():
+                engine = "ComfyUI"
+        elif provider is not None and provider.key == "ollama":
+            if provider.installed and not provider.reachable():
+                engine = "Ollama"
+        self._start_engine = engine
+        self.key_button.setText(f"Start {engine}" if engine else "Add a key")
+        icons.button(self.key_button, "play" if engine else "settings", "@ACCENT")
 
         if not entries:
             self._set_credential_note(
                 "Nothing here yet. Untick 'Only what runs without an API key', or add a key "
                 "in Settings." if self.local_only.isChecked() else "No models for this task.",
                 "subtle")
+        elif usable < 0 and engine:
+            self._set_credential_note(
+                f"{engine} is installed on this PC but not running. Press 'Start {engine}'.",
+                "warnText")
         elif usable < 0:
             names = sorted({name for _, _, state in entries for name in state.needs})
             self._set_credential_note(
@@ -370,19 +379,30 @@ class GeneratePanel(QWidget):
         self._reload_options()
 
     def _fix_locked_model(self) -> None:
-        if not getattr(self, "_start_engine", False):
+        engine = getattr(self, "_start_engine", "")
+        if not engine:
             self.open_settings.emit()
             return
         context = self.context
-        job = context.jobs.submit(
-            "Start ComfyUI",
-            lambda job_context: context.start_comfyui(
-                lambda fraction, message: job_context.progress(fraction, message),
-                lambda: job_context.cancelled),
-            category="engine")
+        if engine == "ComfyUI":
+            def work(job_context):
+                return context.start_comfyui(
+                    lambda fraction, message: job_context.progress(fraction, message),
+                    lambda: job_context.cancelled)
+        else:
+            ollama = context.registry.get("ollama")
+
+            def work(job_context):
+                job_context.progress(0.1, "Starting Ollama")
+                if not ollama.start_server():
+                    raise RuntimeError("Ollama did not start. Open it from the Start menu, "
+                                       "or run `ollama serve`.")
+                ollama.list_models(force=True)   # the model list was cached while it was off
+                return "Ollama is running."
+        job = context.jobs.submit(f"Start {engine}", work, category="engine")
         self.key_button.setEnabled(False)
-        self._set_credential_note("Starting ComfyUI… about half a minute.", "subtle")
-        self.status.emit(f"Job {job.id}: starting ComfyUI")
+        self._set_credential_note(f"Starting {engine}…", "subtle")
+        self.status.emit(f"Job {job.id}: starting {engine}")
 
     def _set_credential_note(self, text: str, style: str) -> None:
         self.credential_label.setText(text)

@@ -896,6 +896,16 @@ def main() -> int:
             return ["ComfyUI was already running"]
         return [tour.context.start_comfyui()]   # what the Start ComfyUI button runs
     tour.check("Setup", "ComfyUI is running (started the way the app starts it)", comfyui)
+
+    def ollama():
+        provider = tour.context.registry.get("ollama")
+        if provider.reachable(force=True):
+            return ["Ollama was already running"]
+        if not provider.start_server():          # what the Start Ollama button runs
+            raise RuntimeError("Ollama did not start")
+        provider.list_models(force=True)
+        return ["Ollama started"]
+    tour.check("Setup", "Ollama is running (started the way the app starts it)", ollama)
     for name, section in SECTIONS.items():
         if (args.only and name not in args.only) or name in args.skip:
             continue
