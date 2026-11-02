@@ -463,15 +463,15 @@ def section_generate(tour: Tour) -> None:
         tour, C.LLM, "ollama", "auto",
         "Write three short, punchy captions for a video about a bright modern living room."))
     if tour.made.get("scene"):
-        keep("i2v")(tour.check(S, "Image to video — Wan 2.2 (Draft)", lambda: generate(
+        keep("i2v")(tour.check(S, "Image to video — Wan 2.2", lambda: generate(
             tour, C.IMAGE_TO_VIDEO, "comfyui", comfy_builtin.WAN22_ID,
             "slow natural motion: plants sway gently, light shifts softly; camera holds still",
-            images=[tour.made["scene"]], options={"quality": "Draft", "seconds": 2.0},
+            images=[tour.made["scene"]], options={"seconds": 2.0},
             timeout=1200)))
-    tour.check(S, "Text to video — Wan 2.2 (Draft)", lambda: generate(
+    tour.check(S, "Text to video — Wan 2.2", lambda: generate(
         tour, C.TEXT_TO_VIDEO, "comfyui", comfy_builtin.WAN22_ID,
         "waves rolling onto a sandy beach at sunset, gentle foam, warm golden light",
-        options={"quality": "Draft", "seconds": 2.0}, timeout=1200))
+        options={"seconds": 2.0}, timeout=1200))
     if tour.made.get("portrait") and tour.made.get("speech"):
         keep("lipsync")(tour.check(S, "Lip sync — Wan 2.2 S2V 14B (Draft, 2 s)", lambda: generate(
             tour, C.LIP_SYNC, "comfyui", comfy_local.S2V_ID,

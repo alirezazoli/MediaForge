@@ -681,8 +681,8 @@ class ComfyUIProvider(Provider):
                   "workflow to export. A photo comes to life: foliage, water and light move; "
                   "the camera stays put, and the photo film adds its own camera move. "
                   "Standard quality takes about 4-5 minutes per clip on an 8 GB laptop GPU. "
-                  "Draft is for photos only: text-only video always renders at Standard, "
-                  "because below it the model breaks up.",
+                  "There is no faster setting: below Standard the model starts inventing "
+                  "people and objects that are not in the photo.",
             options={
                 "quality": {"type": "choice", "default": "Standard",
                             "choices": list(comfy_builtin.SIZES), "label": "Quality"},
@@ -850,10 +850,7 @@ class ComfyUIProvider(Provider):
         files = comfy_builtin.find_wan22_files(self.base_url)
         options = request.options
 
-        quality = options.get("quality") or "Standard"
-        from_photo = request.capability == Capability.IMAGE_TO_VIDEO or bool(request.reference_images)
-        if not from_photo:
-            quality = comfy_builtin.text_only_quality(quality)
+        quality = comfy_builtin.usable_quality(str(options.get("quality") or "Standard"))
         aspect = str(options.get("aspect_ratio") or "16:9")
         try:
             aspect_width, aspect_height = (int(part) for part in aspect.split(":"))
@@ -1163,8 +1160,8 @@ class ComfyUIProvider(Provider):
             if kind == "execution_error":
                 detail = f"{data.get('exception_type', '')}: {data.get('exception_message', '')}"
         if "out of memory" in detail.lower() or "OutOfMemory" in detail:
-            return ("The GPU ran out of memory. Choose Draft quality or a shorter clip, or "
-                    f"close other GPU programs.\n\n{detail.strip()[:400]}")
+            return ("The GPU ran out of memory. Choose Standard rather than High, or close "
+                    f"other programs that use the GPU.\n\n{detail.strip()[:400]}")
         return f"ComfyUI stopped with an error.\n\n{detail.strip()[:600] or 'See the ComfyUI console.'}"
 
     def _fetch(self, item: dict, destination: Path) -> None:

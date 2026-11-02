@@ -47,27 +47,26 @@ DEFAULT_NEGATIVE = (
 )
 
 # (width, height) per quality, landscape. Multiples of 32, as the Wan VAE requires.
+#
+# There is no Draft any more. At 640x352 and 14 steps the 5B model invents: measured
+# 2026-11-02, four of five photo clips grew something that was not there -- a bottle out of
+# a floor, and a person walking into the lake, the beach and the waterfall shots -- and
+# text-only clips came out as rainbow-tinted noise. At 960x544 and 20 steps every clip
+# stayed true. Saved settings that still say "Draft" run at Standard.
 SIZES = {
-    "Draft": (640, 352),
     "Standard": (960, 544),
     "High (slow)": (1280, 704),
 }
-STEPS = {"Draft": 14, "Standard": 20, "High (slow)": 24}
+STEPS = {"Standard": 20, "High (slow)": 24}
 
 
-def text_only_quality(quality: str) -> str:
-    """With no photo to anchor it, the 5B model breaks up below Standard size.
-
-    Feature tour, 2026-11-01: Draft (640x352, 14 steps) gave smeared, rainbow-tinted
-    noise; 30 steps at that size was clean for one seed and banded for the next. Standard
-    (960x544, 20 steps) was clean every time, so text-only video never goes below it.
-    """
-    return "Standard" if quality == "Draft" else quality
+def usable_quality(quality: str) -> str:
+    return quality if quality in SIZES else "Standard"
 
 
 # Seconds per output frame, measured here (see the module docstring). Replaced by this
 # machine's own numbers after its first run.
-DEFAULT_SECONDS_PER_FRAME = {"Draft": 1.6, "Standard": 3.4, "High (slow)": 8.0}
+DEFAULT_SECONDS_PER_FRAME = {"Standard": 3.4, "High (slow)": 8.0}
 
 
 def _timing_file() -> Path:
