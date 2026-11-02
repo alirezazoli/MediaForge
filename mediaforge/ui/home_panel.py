@@ -111,8 +111,9 @@ class HomePanel(QWidget):
         grid = QGridLayout()
         grid.setSpacing(14)
         cards = [
-            ("photos", "Photos to video", "Drop photos, get a clip with slow camera moves, "
-                                     "crossfades and music. Nothing else needed.",
+            ("quick", "Quick clip from photos", "Add photos, pick a length up to 3 minutes, "
+                                               "press Make. AI only adds motion — never "
+                                               "changes a photo.",
              "", "photos"),
             ("edit", "Edit a video", "Trim, cut silence, reframe for social, stabilise, "
                                   "titles, colour, subtitles, export presets.",

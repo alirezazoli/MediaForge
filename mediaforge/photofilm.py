@@ -236,9 +236,9 @@ def build_shot(
     return FfmpegCommand(argv, output, shot.seconds, f"Shot {index + 1}: {move}")
 
 
-# How far an AI clip may be slowed to fill its shot before the rest is held instead.
-# Beyond about 1.5x, slowed foliage and water start to look like a different speed.
-MAX_STRETCH = 1.5
+# How far an AI clip may be slowed to fill its shot before it loops instead. Beyond about
+# 1.25x, slowed foliage and water start to look like a different speed.
+MAX_STRETCH = 1.25
 
 
 def build_conform(
@@ -249,9 +249,11 @@ def build_conform(
 
     Two things a clip from a local model needs that a cloud clip usually does not:
 
-      * **Length.** The local model makes at most 3.4 s, and a shot is often 4-5 s. An
-        output shorter than its shot would throw every later crossfade off, so the clip
-        is slowed a little and, if still short, its last frame is held.
+      * **Length.** The local model makes at most 3.4 s, and a shot is often 4-5 s -- in a
+        three-minute film from a few photos, 20 s or more. An output shorter than its
+        shot would throw every later crossfade off, so the clip is slowed a little and,
+        if still short, plays forward then backward until the shot ends. Holding the last
+        frame, as this used to, froze the scene for most of a long shot.
       * **Camera.** It animates the scene but barely moves the camera (measured: no
         global shift first to last frame). `shot.ai_static_camera` adds the shot's own
         camera move on top, smoothed the same way as a still's.
@@ -268,10 +270,16 @@ def build_conform(
     timing = ""
     if 0 < source_seconds < shot.seconds:
         stretch = min(shot.seconds / source_seconds, MAX_STRETCH)
-        held = shot.seconds - source_seconds * stretch
+        short_by = shot.seconds - source_seconds * stretch
         timing = f"setpts={stretch:.4f}*PTS,fps={settings.fps},"
-        if held > 0.01:
-            timing += f"tpad=stop_mode=clone:stop_duration={held + 0.1:.3f},"
+        if short_by > 0.01:
+            # Forward, then backward without repeating the turning frame, looped: the
+            # motion never stops and never jumps back to the start.
+            frames_once = max(2, int(source_seconds * stretch * settings.fps))
+            timing += ("split[ahead][back];[back]reverse,trim=start_frame=1[reversed];"
+                       "[ahead][reversed]concat=n=2:v=1:a=0,"
+                       f"loop=loop=-1:size={2 * frames_once - 1}:start=0,"
+                       f"setpts=N/{settings.fps}/TB,")
     else:
         timing = f"fps={settings.fps},"
 
@@ -372,7 +380,8 @@ def build_music_mix(
     fade_start = max(0.0, total - settings.fade_out - 0.4)
     argv = [
         locator.ffmpeg, "-y", "-hide_banner",
-        "-i", str(video), "-i", str(music),
+        # A track shorter than the film repeats rather than leaving the end silent.
+        "-i", str(video), "-stream_loop", "-1", "-i", str(music),
         "-filter_complex",
         f"[1:a]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,"
         f"volume={settings.music_volume:.3f},"
@@ -449,6 +458,9 @@ def render(
                     shot.note = f"Could not conform the AI clip; used a camera move.\n{log[-300:]}"
 
         if produced is None:
+            if wants_ai:
+                # Said honestly in the report and in what is learned: this one did not move.
+                shot.resolved_transform = "Camera move"
             progress(base_progress, f"Photo {index + 1} of {len(shots)}: camera move")
             command = build_shot(locator, shot, target, settings, index)
             code, log = ffmpeg_tools.run_with_progress(

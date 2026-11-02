@@ -31,6 +31,7 @@ from . import icons, theme
 # (key, label, section, icon glyph from Segoe Fluent Icons)
 NAV_ITEMS = [
     ("home",      "Home",             "",         ""),
+    ("quick",     "Quick clip",       "CREATE",   "sparkle"),
     ("photos",    "Photos to video",  "CREATE",   "photos"),
     ("generate",  "Generate",         "CREATE",   "generate"),
     ("director",  "Director",         "CREATE",   "director"),

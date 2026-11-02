@@ -32,6 +32,7 @@ from .learning_panel import LearningPanel
 from .library_panel import LibraryPanel
 from .music_panel import MusicPanel
 from .photo_clip_panel import PhotoClipPanel
+from .quick_panel import QuickPanel
 from .repair_panel import RepairPanel
 from .settings_panel import SettingsPanel
 from . import sidebar as sidebar_module
@@ -91,6 +92,7 @@ class MainWindow(QMainWindow):
         self.sidebar.collapsed_changed.connect(self._on_sidebar_collapsed)
 
         self.home_panel = HomePanel(self.context)
+        self.quick_panel = QuickPanel(self.context)
         self.photo_panel = PhotoClipPanel(self.context)
         self.library_panel = LibraryPanel(self.context)
         self.generate_panel = GeneratePanel(self.context)
@@ -110,6 +112,7 @@ class MainWindow(QMainWindow):
 
         self.panels: dict[str, QWidget] = {
             "home": self.home_panel,
+            "quick": self.quick_panel,
             "photos": self.photo_panel,
             "edit": self.edit_panel,
             "enhance": self.enhance_panel,
@@ -140,6 +143,8 @@ class MainWindow(QMainWindow):
 
         self.home_panel.navigate.connect(self.go_to)
         self.home_panel.status.connect(self._set_status)
+        self.quick_panel.status.connect(self._set_status)
+        self.quick_panel.library_changed.connect(self._refresh_library)
         self.photo_panel.status.connect(self._set_status)
         self.photo_panel.library_changed.connect(self._refresh_library)
         self.library_panel.send_to_edit.connect(self._send_to_edit)
@@ -439,6 +444,11 @@ class MainWindow(QMainWindow):
             if job.state == JobState.DONE:
                 self._refresh_library()
             self._set_status(f"{job.title}: {job.message or job.state.value}")
+            return
+        if job.category == "quickfilm":
+            # Reports on its own page, failures included, like the photo film.
+            self.quick_panel.on_job_update(job)
+            self._set_status(f"{job.title}: {job.message}")
             return
         if job.category in ("photofilm", "autopilot"):
             self.photo_panel.on_job_update(job)

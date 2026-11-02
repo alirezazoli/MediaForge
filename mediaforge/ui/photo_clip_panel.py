@@ -18,13 +18,12 @@ from PySide6.QtWidgets import (
 
 from .. import atmosphere as atmo
 from .. import repair as repair_module
-from .. import autopilot, comfyserver, learning, photofilm, sceneanalysis
+from .. import autopilot, comfyserver, learning, photo_ai, photofilm, sceneanalysis
 from ..context import AppContext
 from ..ffmpeg_tools import IMAGE_SUFFIXES
 from ..photofilm import (
     ALL_MOVES, ASPECTS, FIT_MODES, PhotoFilmSettings, Shot, TRANSFORMS,
 )
-from ..providers import Capability, GenerationRequest
 from . import icons, theme
 from .shot_inspector import ShotInspector
 from .stepper import Step, StepFlow
@@ -936,46 +935,8 @@ class PhotoClipPanel(QWidget):
         self.status.emit(f"Rendering {len(shots)} photos into a clip")
 
     def _make_ai_renderer(self):
-        """Bridges a Shot to the provider registry, or None when nothing can run."""
-        context = self.context
-
-        def renderer(shot: Shot, index: int, output_dir: Path, progress, cancel):
-            provider_key = shot.ai_provider or "catalog"
-            model_id = shot.ai_model
-            if not model_id:
-                chosen, _ = autopilot.best_ai_model(context.registry)
-                if chosen is None:
-                    return None
-                provider_key, model_id = chosen
-
-            provider = context.registry.get(provider_key)
-            if provider is None:
-                return None
-
-            width, height = self.settings().size
-            aspect = "1:1" if width == height else ("9:16" if height > width else "16:9")
-            request = GenerationRequest(
-                capability=Capability.IMAGE_TO_VIDEO,
-                model_id=model_id,
-                prompt=shot.ai_prompt or "",
-                reference_images=[shot.path],
-                options={
-                    "duration": max(2, int(round(shot.seconds))),
-                    "duration_seconds": max(2, int(round(shot.seconds))),
-                    "seconds": shot.seconds,
-                    "aspect_ratio": aspect,
-                },
-                output_dir=output_dir,
-            )
-            result = provider.generate(
-                request, progress=progress, should_cancel=cancel or (lambda: False)
-            )
-            # A model that animates the scene but not the camera says so; the film then
-            # adds the shot's own camera move when it conforms the clip.
-            shot.ai_static_camera = (result.raw or {}).get("camera") == "static"
-            return result.files[0] if result.files else None
-
-        return renderer
+        """Bridges a Shot to the provider registry; every clip is checked for faithfulness."""
+        return photo_ai.make_renderer(self.context, lambda: self.settings().size)
 
     def cancel(self) -> None:
         if self._job_id is not None:
