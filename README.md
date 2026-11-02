@@ -39,7 +39,8 @@ move, and every job reports its progress on the screen that started it.
 
 | Screen | Steps | What it does |
 |---|---|---|
-| Photos to video | Photos → Look → Film → Create | Photos become shots with camera moves, crossfades, atmosphere and music |
+| **Quick clip** | one page | Photos in, a film of the length you choose (up to 3:00) out: music composed to that length on this PC or your own file, and optional AI motion. The photos are never repainted — no looks, no rain or fog — and every AI shot is checked against its photo and replaced by a camera move if anything in it appeared, vanished or changed |
+| Photos to video | Photos → Look → Film → Create | The same with every decision open: per-photo moves, atmosphere, pace, framing |
 | Repair & upscale | Video → Analyse → Fix → Result | Measures noise, softness, dead air, bars, shake, interlacing and loudness, then fixes what it found; before/after wipe |
 | Batch repair | Folder → Analyse → Fix → Repair | The same, for a whole folder, with a per-file account of what happened |
 | Edit | File → Tool → Settings → Result | 45 ffmpeg tools as tiles — cut, frame, look, layer, sound, convert (MP4/HEVC/WebM/AV1/ProRes/MKV, MP3/M4A/WAV/FLAC/Opus), compress to a size in MB, join, stills; the result can be fed straight back in for the next tool |
@@ -68,7 +69,7 @@ stopped; each model is found by asking ComfyUI which files it can load.
 | Task | Model | Needs | Time on an 8 GB laptop GPU |
 |---|---|---|---|
 | Text to image, image edit | SDXL (any SDXL checkpoint, e.g. Juggernaut XL) | ComfyUI | 30–60 s per image |
-| Text to video, image to video | Wan 2.2 TI2V 5B | ComfyUI | ~80 s Draft, ~4–5 min Standard |
+| Text to video, image to video | Wan 2.2 TI2V 5B | ComfyUI | ~4–5 min per clip (Standard; below it the model invents things, so there is no Draft) |
 | Lip sync (a photo speaks an audio track) | Wan 2.2 S2V 14B, GGUF or safetensors | ComfyUI (+ ComfyUI-GGUF) | slow: minutes per second |
 | Text to music, with or without lyrics | ACE-Step 1.5 | ComfyUI | ~1 min for 30 s |
 | Image upscale 4× | Real-ESRGAN x4plus | ComfyUI | 1–2 min |
