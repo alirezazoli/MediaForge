@@ -45,7 +45,8 @@ TOOL_GROUPS: list[tuple[str, list[tuple[str, str, str, str]]]] = [
          "Vertical, square or 4:5, with a blurred fill instead of black bars."),
         ("crop", "Crop", "crop", "Keeps one rectangle of the frame."),
         ("rotate", "Rotate / flip", "rotate", "Turns a sideways phone clip upright, or mirrors it."),
-        ("transcode", "Resize / convert", "convert", "Changes size, frame rate, codec or quality."),
+        ("transcode", "Resize / frame rate", "frames",
+         "Changes the picture size or frame rate. To change the file format, use Convert format."),
     ]),
     ("Look", [
         ("grade", "Colour", "palette", "Brightness, contrast, saturation and gamma."),
